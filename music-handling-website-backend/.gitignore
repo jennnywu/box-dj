@@ -1,0 +1,22 @@
+# --- Sensitive files ---
+.env
+backend/.env
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Virtual environments ---
+venv/
+.env/
+.venv/
+
+# --- System files ---
+.DS_Store
+Thumbs.db
+
+# --- Logs / temp ---
+*.log
+*.tmp

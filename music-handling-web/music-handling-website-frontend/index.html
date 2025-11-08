@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify DJ</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="main">
+    <!-- search bar -->
+    <div class="header-bar">
+      <div class="search-container">
+        <input type="text" id="songSearch" placeholder="Search Spotify..." />
+        <button id="searchBtn">🔍</button>
+      </div>
+      <div id="searchResults" class="search-results"></div>
+    </div>
+
+    <!-- playlist header -->
+    <div class="playlist-header">
+      <img src="playlist.jpg" alt="Playlist Cover" />
+      <div class="playlist-info">
+        <h1>Playlist</h1>
+        <p>DJ Box</p>
+        <p class="playlist-meta">
+          by jenny · <span id="songCount">0 songs · </span><span id="songLength">0 hr 0 min</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- playlist table -->
+    <table id="playlist">
+      <thead>
+        <tr>
+          <th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Duration</th><th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="status">Status: Not connected</div>
+  </div>
+
+  <!-- now playing bar -->
+  <div class="now-playing">
+    <div class="song-info">
+      <img src="playlist.jpg" alt="Now Playing" />
+      <div class="song-details">
+        <span id="currentSong">No song playing</span>
+        <span id="artistName">DJ Box</span>
+      </div>
+    </div>
+    <div class="controls-bar">
+      <button onclick="sendRaw('previous')">⏮</button>
+      <button onclick="togglePlay()" id="playPauseBtn">▶</button>
+      <button onclick="sendRaw('next')">⏭</button>
+      <button onclick="sendRaw('shuffle')">🔀</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

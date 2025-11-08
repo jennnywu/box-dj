@@ -1,6 +1,6 @@
-// CONFIG
-const PI_IP = "172.20.10.2";   // replace with your Raspberry Pi IP
-const PI_PORT = 12345;
+// configuration
+const PI_IP = "172.20.10.8";
+const PI_PORT = 8080;
 
 let SPOTIFY_TOKEN = "";
 let ws;
@@ -9,11 +9,11 @@ let currentSong = "";
 let songs = [];
 let dropdownTimeout = null;
 
-// --- Fetch Spotify token from Flask server ---
+// fetch spotify token from flask server 
 async function getTokenFromServer() {
   try {
     console.log("Fetching Spotify token...");
-    const res = await fetch("http://localhost:6060/token"); // match your Flask port
+    const res = await fetch("http://localhost:6060/token");
     const data = await res.json();
     SPOTIFY_TOKEN = data.access_token;
     console.log("Spotify token fetched successfully");
@@ -22,7 +22,7 @@ async function getTokenFromServer() {
   }
 }
 
-// --- Connect to Raspberry Pi WebSocket ---
+// connect to rpi websocket
 function connect() {
   console.log("Attempting WebSocket connection to", `ws://${PI_IP}:${PI_PORT}`);
   ws = new WebSocket(`ws://${PI_IP}:${PI_PORT}`);
@@ -35,7 +35,7 @@ function connect() {
   ws.onclose = () => {
     updateStatus("Disconnected");
     console.warn("WebSocket disconnected. Reconnecting in 5 seconds...");
-    setTimeout(connect, 5000); // auto-reconnect
+    setTimeout(connect, 5000);
   };
 
   ws.onerror = (e) => {
@@ -48,7 +48,7 @@ function connect() {
   };
 }
 
-// --- Utility functions ---
+// utility functions
 function updateStatus(msg) {
   const statusElem = document.getElementById("status");
   if (statusElem) statusElem.textContent = "Status: " + msg;
@@ -62,7 +62,7 @@ function msToMinutes(ms) {
   return `${min}:${sec.toString().padStart(2, "0")}`;
 }
 
-// --- Build playlist table ---
+// build playlist table
 function buildPlaylist() {
   const tbody = document.querySelector("#playlist tbody");
   tbody.innerHTML = "";
@@ -96,7 +96,7 @@ function buildPlaylist() {
   }
 }
 
-// --- Spotify live search ---
+// spotify live search
 async function liveSpotifySearch() {
   const input = document.getElementById("songSearch");
   const q = input.value.trim();
@@ -138,7 +138,7 @@ async function liveSpotifySearch() {
   }, 300);
 }
 
-// --- Add song to playlist ---
+// add song to playlist
 function addSongFromSearch(title, artist, album, uri, duration_ms) {
   const resultsDiv = document.getElementById("searchResults");
   resultsDiv.style.display = "none";
@@ -155,7 +155,7 @@ function addSongFromSearch(title, artist, album, uri, duration_ms) {
   updateStatus(`Added "${title}" from Spotify`);
 }
 
-// --- Playback control ---
+// playback control
 function selectSong(i) {
   const song = songs[i];
   currentSong = song.title;
@@ -164,15 +164,14 @@ function selectSong(i) {
   document.getElementById("artistName").textContent = song.artist;
 
   const payload = {
-    command: "play_track",
     title: song.title,
     artist: song.artist,
-    spotify_uri: song.spotify_uri,
+    // spotify_uri: song.spotify_uri,
   };
   sendSong(payload);
 }
 
-// --- Send JSON payload to Pi ---
+// send json payload to rpi
 function sendSong(songInfo) {
   console.log("sendSong() called with:", songInfo);
 
@@ -198,12 +197,12 @@ function sendSong(songInfo) {
   }
 }
 
-// --- Raw message helper ---
+// raw message helper
 function sendRaw(text) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
 }
 
-// --- Play / Pause toggle ---
+// play / pause toggle
 function togglePlay() {
   if (!currentSong) return;
   isPlaying = !isPlaying;
@@ -211,7 +210,7 @@ function togglePlay() {
   sendRaw(isPlaying ? "resume" : "pause");
 }
 
-// --- Initialize app ---
+// initialize app
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("Page loaded; initializing app...");
   try {

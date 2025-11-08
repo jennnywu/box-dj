@@ -14,6 +14,9 @@ HOME_PATH = "/home/jenny/box-dj/"
 
 current_rate_1 = 1.0
 current_rate_2 = 1.0
+current_volume_1 = 1.0
+current_volume_2 = 1.0
+
 
 def on_pad_added(element, pad, target_element):
     """
@@ -39,41 +42,58 @@ def on_pad_added(element, pad, target_element):
         print(f"!!! FAILED to link {element.get_name()} to {target_element.get_name()} !!!")
 
 
-def on_key_press(source_fd, condition, rate_elements):
+def on_key_press(source_fd, condition, elements):
     """
     This function is called by the GLib.MainLoop whenever
     a key is pressed on the keyboard (sys.stdin).
-    'rate_elements' is a tuple containing (rate1, rate2)
     """
-    global current_rate_1, current_rate_2
+    global current_rate_1, current_rate_2, current_volume_1, current_volume_2
     
-    rate1, rate2 = rate_elements
+    rate1, rate2, sink_pad_1, sink_pad_2 = elements
     
     char = sys.stdin.read(1)
     
+    # --- Deck 2 Speed (j, k) ---
     if char == 'k':
         current_rate_2 += 0.05
         print(f"Speed 2: {current_rate_2:.2f}")
         rate2.set_property("rate", current_rate_2)
     elif char == 'j':
-        current_rate_2 -= 0.05
-        if current_rate_2 < 0.05:
-            current_rate_2 = 0.05
+        current_rate_2 = max(0.05, current_rate_2 - 0.05) # Clamp at 0.05
         print(f"Speed 2: {current_rate_2:.2f}")
         rate2.set_property("rate", current_rate_2)
         
+    # --- Deck 1 Speed (d, f) ---
     elif char == 'f':
         current_rate_1 += 0.05
         print(f"Speed 1: {current_rate_1:.2f}")
         rate1.set_property("rate", current_rate_1)
     elif char == 'd':
-        current_rate_1 -= 0.05
-        if current_rate_1 < 0.05:
-            current_rate_1 = 0.05
+        current_rate_1 = max(0.05, current_rate_1 - 0.05) # Clamp at 0.05
         print(f"Speed 1: {current_rate_1:.2f}")
         rate1.set_property("rate", current_rate_1)
+
+    # --- Deck 1 Volume (e, c) ---
+    elif char == 'e':
+        current_volume_1 = min(1.0, current_volume_1 + 0.1) # Clamp at 1.0
+        print(f"Volume 1: {current_volume_1:.1f}")
+        sink_pad_1.set_property("volume", current_volume_1)
+    elif char == 'c':
+        current_volume_1 = max(0.0, current_volume_1 - 0.1) # Clamp at 0.0
+        print(f"Volume 1: {current_volume_1:.1f}")
+        sink_pad_1.set_property("volume", current_volume_1)
+
+    # --- Deck 2 Volume (i, m) ---
+    elif char == 'i':
+        current_volume_2 = min(1.0, current_volume_2 + 0.1) # Clamp at 1.0
+        print(f"Volume 2: {current_volume_2:.1f}")
+        sink_pad_2.set_property("volume", current_volume_2)
+    elif char == 'm':
+        current_volume_2 = max(0.0, current_volume_2 - 0.1) # Clamp at 0.0
+        print(f"Volume 2: {current_volume_2:.1f}")
+        sink_pad_2.set_property("volume", current_volume_2)
     
-    return True
+    return True # Keep listening
 
 def main():
     file_path1 = os.path.join(HOME_PATH, "rpi/example-mp3/chappell-roan-red-wine-supernova.mp3")
@@ -156,15 +176,20 @@ def main():
     old_settings = termios.tcgetattr(fd)
     
     print("\nPipeline is running.")
-    print("  Deck 1: 'd' (slow) / 'f' (fast)")
-    print("  Deck 2: 'j' (slow) / 'k' (fast)")
+    print("  Deck 1:")
+    print("         'd' (slow) / 'f' (fast)")
+    print("         'e' (volume up) / 'c' (volume down)")
+    print("  Deck 2:")
+    print("         'j' (slow) / 'k' (fast)")
+    print("         'i' (volume up) / 'm' (volume down)")
     print("Press Ctrl+C to stop.\n")
     
     try:
         # Set terminal to "cbreak" mode (no waiting for 'Enter')
         tty.setcbreak(sys.stdin.fileno())
         
-        GLib.io_add_watch(fd, GLib.IO_IN, on_key_press, (rate1, rate2))
+        GLib.io_add_watch(fd, GLib.IO_IN, on_key_press, (rate1, rate2, sink_pad_1, sink_pad_2))
+
         loop.run()
     except KeyboardInterrupt:
         print("\nStopping pipeline...")

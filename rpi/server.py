@@ -12,6 +12,7 @@ def download_song(title: str, artist: str):
     """
     Downloads a song from a URL and saves it to the DOWNLOAD_DIR.
     """
+    # Requires yt-dlp to be installed on system: https://github.com/yt-dlp/yt-dlp
     download_command = f"yt-dlp -x --audio-format mp3 --no-playlist 'ytsearch:{artist} {title}' -o '{DOWNLOAD_DIR}/%(title)s.%(ext)s'"
     os.system(download_command)
     return

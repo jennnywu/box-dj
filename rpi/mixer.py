@@ -3,11 +3,17 @@
 import gi
 import sys
 import os
+import tty
+import termios
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
 HOME_PATH = "/home/jenny/box-dj/"
+
+
+current_rate_1 = 1.0
+current_rate_2 = 1.0
 
 def on_pad_added(element, pad, target_element):
     """
@@ -26,16 +32,50 @@ def on_pad_added(element, pad, target_element):
         print(f"Sink pad on {target_element.get_name()} is already linked.")
         return
 
-    # Try to link the decodebin's new pad to the audioconvert's sink pad
     try:
         pad.link(sink_pad)
         print(f"Successfully linked {element.get_name()} to {target_element.get_name()}")
     except Gst.LinkError:
-        print(f"!!! FAILED to link {element.get_name()} to {target_element.get_name()}")
+        print(f"!!! FAILED to link {element.get_name()} to {target_element.get_name()} !!!")
 
+
+def on_key_press(source_fd, condition, rate_elements):
+    """
+    This function is called by the GLib.MainLoop whenever
+    a key is pressed on the keyboard (sys.stdin).
+    'rate_elements' is a tuple containing (rate1, rate2)
+    """
+    global current_rate_1, current_rate_2
+    
+    rate1, rate2 = rate_elements
+    
+    char = sys.stdin.read(1)
+    
+    if char == 'k':
+        current_rate_2 += 0.05
+        print(f"Speed 2: {current_rate_2:.2f}")
+        rate2.set_property("rate", current_rate_2)
+    elif char == 'j':
+        current_rate_2 -= 0.05
+        if current_rate_2 < 0.05:
+            current_rate_2 = 0.05
+        print(f"Speed 2: {current_rate_2:.2f}")
+        rate2.set_property("rate", current_rate_2)
+        
+    elif char == 'f':
+        current_rate_1 += 0.05
+        print(f"Speed 1: {current_rate_1:.2f}")
+        rate1.set_property("rate", current_rate_1)
+    elif char == 'd':
+        current_rate_1 -= 0.05
+        if current_rate_1 < 0.05:
+            current_rate_1 = 0.05
+        print(f"Speed 1: {current_rate_1:.2f}")
+        rate1.set_property("rate", current_rate_1)
+    
+    return True
 
 def main():
-    # --- Filepaths ---
     file_path1 = os.path.join(HOME_PATH, "rpi/example-mp3/chappell-roan-red-wine-supernova.mp3")
     file_path2 = os.path.join(HOME_PATH, "rpi/example-mp3/charli-xcx-365.mp3")
 
@@ -47,14 +87,14 @@ def main():
     src1.set_property("location", file_path1)
     decode1 = Gst.ElementFactory.make("decodebin", "decode1")
     convert1 = Gst.ElementFactory.make("audioconvert", "convert1")
-    rate1 = Gst.ElementFactory.make("audiorate", "rate1")
+    rate1 = Gst.ElementFactory.make("pitch", "rate1") 
 
     # --- Deck 2 Elements ---
     src2 = Gst.ElementFactory.make("filesrc", "src2")
     src2.set_property("location", file_path2)
     decode2 = Gst.ElementFactory.make("decodebin", "decode2")
     convert2 = Gst.ElementFactory.make("audioconvert", "convert2")
-    rate2 = Gst.ElementFactory.make("audiorate", "rate2")
+    rate2 = Gst.ElementFactory.make("pitch", "rate2")
 
     # --- The Mixer Element ---
     mixer = Gst.ElementFactory.make("audiomixer", "mixer")
@@ -110,12 +150,26 @@ def main():
     pipeline.set_state(Gst.State.PLAYING)
 
     loop = GLib.MainLoop()
+
     print("Pipeline is running. Press Ctrl+C to stop.")
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    
+    print("\nPipeline is running.")
+    print("  Deck 1: 'd' (slow) / 'f' (fast)")
+    print("  Deck 2: 'j' (slow) / 'k' (fast)")
+    print("Press Ctrl+C to stop.\n")
+    
     try:
+        # Set terminal to "cbreak" mode (no waiting for 'Enter')
+        tty.setcbreak(sys.stdin.fileno())
+        
+        GLib.io_add_watch(fd, GLib.IO_IN, on_key_press, (rate1, rate2))
         loop.run()
     except KeyboardInterrupt:
-        # Handle Ctrl+C to stop
         print("\nStopping pipeline...")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         pipeline.set_state(Gst.State.NULL)
         loop.quit()
 

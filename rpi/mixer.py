@@ -74,7 +74,7 @@ class DJDeck:
         self._update_rate()
 
     def _update_state_turntable(self):
-        prev_velocities = [entry['velocity'] for entry in self.encoder_read_history]
+        prev_velocities = [entry['enc1_velocity'] for entry in self.encoder_read_history]
 
         if not self.encoder_read_history:
             return
@@ -100,7 +100,7 @@ class DJDeck:
             case TurntableState.MODULATING_SPEED:
                 print("Modulating speed...")
                 """Update playback rate based on encoder velocity (scratching)"""
-                velocity = self.encoder_read_history[-1]['velocity']
+                velocity = self.encoder_read_history[-1]['enc1_velocity']
                 rate_change = velocity / VELOCITY_SCALE
                 new_rate = 1.0 + rate_change
 
@@ -306,6 +306,7 @@ class DJMixer:
                     self.deck2.update_from_encoder()
 
         except Exception as e:
+            raise e
             print(f"Error in I2C update: {e}")
 
         return True  # Keep timer running

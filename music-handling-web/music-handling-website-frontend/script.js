@@ -2,7 +2,7 @@ const PI_IP = "127.0.0.1";
 const PI_PORT = 8080;
 const USE_FORWARDER = true; // Use ngrok to forward or not
 
-const DOMAIN = USE_FORWARDER ? "73838a5b9b21.ngrok-free.app" : `${PI_IP}:${PI_PORT}`;
+const DOMAIN = USE_FORWARDER ? "9d9bf3a5fc21.ngrok-free.app" : `${PI_IP}:${PI_PORT}`;
 const BASE_URL = USE_FORWARDER ? `https://${DOMAIN}` : `http://${DOMAIN}`;
 const WEBSOCKET_ADDRESS = USE_FORWARDER ? `wss://${DOMAIN}` : `ws://${DOMAIN}`; // Socket.IO uses the BASE_URL
 
@@ -20,6 +20,7 @@ let deckPlayState = {'deck1': false, 'deck2': false};
 let dropdownTimeout = null;
 
 let activeDeck = 'deck1'; 
+let downloadingSongs = {}; // To keep track of songs being downloaded
 
 
 // fetch spotify token from flask server 
@@ -69,8 +70,34 @@ function connect() {
     });
 
     ws.on('status_update', (data) => {
-        console.log("Download Status:", data.message);
+        console.log("Download Status Update Received:", data);
         updateStatus(data.message); // Update the status bar with the message
+
+        const { message, spotify_uri, deck_id } = data;
+
+        if (message.includes("Download complete for") || message.includes("Already downloaded:")) {
+            const downloadKey = `${spotify_uri}-${deck_id}`;
+            const searchResultDiv = downloadingSongs[downloadKey];
+            console.log("Download complete for key:", downloadKey, "Found div:", !!searchResultDiv);
+
+            if (searchResultDiv) {
+                // Remove the spinner
+                const spinner = searchResultDiv.querySelector('.small-spinner');
+                if (spinner) {
+                    console.log("Removing spinner.");
+                    spinner.remove();
+                }
+                // Add "Downloaded" text
+                const downloadedText = document.createElement('span');
+                downloadedText.textContent = "Downloaded";
+                downloadedText.style.color = '#1db954'; // Spotify green
+                downloadedText.style.marginLeft = '10px';
+                searchResultDiv.appendChild(downloadedText);
+
+                // Optionally, remove the entry from downloadingSongs
+                delete downloadingSongs[downloadKey];
+            }
+        }
     });
     
     ws.on('playlist_update', (data) => {
@@ -196,13 +223,13 @@ async function liveSpotifySearch() {
             resultsDiv.innerHTML = tracks.map(t => `
               <div class="search-result">
                 <span class="song-info">${t.name} — ${t.artists.map(a => a.name).join(", ")}</span>
-                <button onclick="addSongFromSearch('${t.name.replace(/'/g, "\\'")}', 
+                <button onclick="addSongFromSearch(this, '${t.name.replace(/'/g, "\\'")}', 
                                                     '${t.artists.map(a => a.name).join(", ").replace(/'/g, "\\'")}', 
                                                     '${t.album.name.replace(/'/g, "\\'")}', 
                                                     '${t.uri}', ${t.duration_ms}, 'deck1')">
                     Add D1
                 </button>
-                <button onclick="addSongFromSearch('${t.name.replace(/'/g, "\\'")}', 
+                <button onclick="addSongFromSearch(this, '${t.name.replace(/'/g, "\\'")}', 
                                                     '${t.artists.map(a => a.name).join(", ").replace(/'/g, "\\'")}', 
                                                     '${t.album.name.replace(/'/g, "\\'")}', 
                                                     '${t.uri}', ${t.duration_ms}, 'deck2')">
@@ -219,10 +246,21 @@ async function liveSpotifySearch() {
 
 
 // add song to playlist
-function addSongFromSearch(title, artist, album, uri, duration_ms, deckId) { 
+function addSongFromSearch(buttonElement, title, artist, album, uri, duration_ms, deckId) { 
     const resultsDiv = document.getElementById("searchResults");
     resultsDiv.style.display = "none";
     
+    const searchResultDiv = buttonElement.closest('.search-result');
+    if (searchResultDiv) {
+        console.log("Adding spinner for:", title);
+        // Hide all buttons in this search result
+        searchResultDiv.querySelectorAll('button').forEach(btn => btn.style.display = 'none');
+        // Add a spinner
+        const spinner = document.createElement('div');
+        spinner.className = 'small-spinner';
+        searchResultDiv.appendChild(spinner);
+    }
+
     const newSong = {
         title,
         artist,
@@ -235,6 +273,10 @@ function addSongFromSearch(title, artist, album, uri, duration_ms, deckId) {
     };
     
     sendSong(newSong);
+    
+    // Store the searchResultDiv reference for later update
+    const downloadKey = `${uri}-${deckId}`;
+    downloadingSongs[downloadKey] = searchResultDiv;
     
     updateStatus(`Requesting RPI to add "${title}" to ${deckId.toUpperCase()}`);
 }

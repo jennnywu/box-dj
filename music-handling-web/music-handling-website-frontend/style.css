@@ -98,6 +98,24 @@ html, body {
   background: #1ed760; /* Slightly lighter green on hover */
 }
 
+/* Small Spinner for Search Results */
+.small-spinner {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid #1db954; /* Spotify green */
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
 /* --- Playlist Header (Unified) --- */
 .playlist-header {
   display: flex;

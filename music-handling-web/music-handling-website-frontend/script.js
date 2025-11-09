@@ -37,6 +37,7 @@ async function getTokenFromServer() {
     }
 }
 
+
 function connect() {
     console.log("Attempting Socket.IO connection to", WEBSOCKET_ADDRESS);
     
@@ -78,6 +79,7 @@ function connect() {
     });
 }
 
+
 // utility functions
 function updateStatus(msg) {
     const statusElem = document.getElementById("status");
@@ -85,12 +87,14 @@ function updateStatus(msg) {
     else console.warn("No #status element found in DOM");
 }
 
+
 function msToMinutes(ms) {
     const totalSec = Math.floor(ms / 1000);
     const min = Math.floor(totalSec / 60);
     const sec = totalSec % 60;
     return `${min}:${sec.toString().padStart(2, "0")}`;
 }
+
 
 // build playlist table
 function buildPlaylist() {
@@ -125,6 +129,7 @@ function buildPlaylist() {
         songLengthElem.textContent = hours > 0 ? `${hours} hr ${minutes} min` : `${minutes} min`;
     }
 }
+
 
 async function liveSpotifySearch() {
     const input = document.getElementById("songSearch");
@@ -168,6 +173,7 @@ async function liveSpotifySearch() {
     }, 300);
 }
 
+
 // add song to playlist
 function addSongFromSearch(title, artist, album, uri, duration_ms) {
     const resultsDiv = document.getElementById("searchResults");
@@ -190,6 +196,8 @@ function addSongFromSearch(title, artist, album, uri, duration_ms) {
     
     updateStatus(`Requesting RPI to add "${title}"`);
 }
+
+
 // playback control
 function selectSong(i) {
     const song = songs[i];
@@ -206,10 +214,11 @@ function selectSong(i) {
     sendSong(payload);
 }
 
+
 function sendSong(songInfo) {
     console.log("sendSong() called with:", songInfo);
 
-    if (!ws || !ws.connected) {
+    if (!ws?.connected) {
         console.warn("Socket.IO not connected; skipping send.");
         updateStatus("Not connected to Pi");
         return;
@@ -221,10 +230,12 @@ function sendSong(songInfo) {
     updateStatus(`Sent "${songInfo.title}" to Pi`);
 }
 
+
 // raw message helper
 function sendRaw(text) {
-    if (ws && ws.connected) ws.emit("message", text);
+    if (ws?.connected) ws.emit("message", text);
 }
+
 
 // play / pause toggle
 function togglePlay() {
@@ -233,6 +244,7 @@ function togglePlay() {
     document.getElementById("playPauseBtn").textContent = isPlaying ? "⏸" : "▶";
     sendRaw(isPlaying ? "resume" : "pause");
 }
+
 
 // initialize app
 document.addEventListener("DOMContentLoaded", async () => {

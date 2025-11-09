@@ -19,8 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "driver/gpio.h"
-#include "driver/adc.h"
-#include "esp_adc_cal.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -42,7 +43,11 @@
 #define SONG_TWO_SPEED              GPIO_NUM_13
 
 // Potentiometer ADC
-#define VOLUME_POTENTIOMETER        ADC1_CHANNEL_6  // GPIO 34
+#define VOLUME_POTENTIOMETER_CHANNEL    ADC_CHANNEL_6  // GPIO 34
+#define VOLUME_POTENTIOMETER_UNIT       ADC_UNIT_1
+
+#define SLIDER_POTENTIOMETER_CHANNEL    ADC_CHANNEL_7  // GPIO 35
+#define SLIDER_POTENTIOMETER_UNIT       ADC_UNIT_1
 
 // Debounce time in microseconds (50ms)
 #define DEBOUNCE_TIME_US            50000
@@ -66,16 +71,73 @@ static const gpio_num_t button_gpios[NUM_BUTTONS] = {
     SONG_TWO_SPEED             // BUTTON_SONG_2
 };
 
-// ADC characteristics
-static esp_adc_cal_characteristics_t *adc_chars = NULL;
+// ADC handle and calibration
+static adc_oneshot_unit_handle_t adc_handle = NULL;
+static adc_cali_handle_t adc_cali_handle = NULL;
 
 /*------------------------------------------------------------------------------------------------*/
 /* FUNCTION PROTOTYPES                                                                            */
 /*------------------------------------------------------------------------------------------------*/
 
-static void IRAM_ATTR button_isr_handler(void *arg);
+/**************************************************************************************************/
+/**
+ * @name
+ * @brief
+ *
+ *
+ * @param arg
+ *
+ */
+/**************************************************************************************************/
+static void button_isr_handler(void *arg);
+
+/**************************************************************************************************/
+/**
+ * @name
+ * @brief
+ *
+ *
+ *
+ * @return esp_err_t
+ */
+/**************************************************************************************************/
 static esp_err_t buttons_init(void);
-static esp_err_t potentiometer_init(void);
+
+/**************************************************************************************************/
+/**
+ * @name
+ * @brief
+ *
+ *
+ *
+ * @return esp_err_t
+ */
+/**************************************************************************************************/
+static esp_err_t volume_potentiometer_init(void);
+
+/**************************************************************************************************/
+/**
+ * @name
+ * @brief
+ *
+ *
+ *
+ * @return esp_err_t
+ */
+/**************************************************************************************************/
+static esp_err_t slider_potentiometer_init(void);
+
+/**************************************************************************************************/
+/**
+ * @name
+ * @brief Get the button index object
+ *
+ *
+ * @param gpio
+ *
+ * @return int
+ */
+/**************************************************************************************************/
 static int get_button_index(gpio_num_t gpio);
 
 /*------------------------------------------------------------------------------------------------*/
@@ -96,6 +158,7 @@ static void IRAM_ATTR button_isr_handler(void *arg)
     if (time_since_last > DEBOUNCE_TIME_US) {
         button_states[button_idx].pressed = true;
         button_states[button_idx].last_press = now;
+        LOG_DEBUG(TAG, "Button %d pressed (GPIO %d)\n", button_idx, gpio);
     }
 }
 
@@ -158,34 +221,70 @@ static esp_err_t buttons_init(void)
     return ESP_OK;
 }
 
-static esp_err_t potentiometer_init(void)
+static esp_err_t volume_potentiometer_init(void)
 {
     esp_err_t ret;
 
-    // Configure ADC1
-    ret = adc1_config_width(ADC_WIDTH_BIT_12);  // 12-bit resolution (0-4095)
+    // Configure ADC1 unit
+    adc_oneshot_unit_init_cfg_t init_config = {
+        .unit_id = VOLUME_POTENTIOMETER_UNIT,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    ret = adc_oneshot_new_unit(&init_config, &adc_handle);
     if (ret != ESP_OK) {
-        LOG_ERROR(TAG, "Failed to configure ADC width: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    ret = adc1_config_channel_atten(VOLUME_POTENTIOMETER, ADC_ATTEN_DB_11);  // 0-3.3V range
+    // Configure ADC channel
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH_12,        // 12-bit resolution (0-4095)
+        .atten = ADC_ATTEN_DB_12,           // 0-3.3V range (updated from DB_11)
+    };
+
+    ret = adc_oneshot_config_channel(adc_handle, VOLUME_POTENTIOMETER_CHANNEL, &config);
     if (ret != ESP_OK) {
-        LOG_ERROR(TAG, "Failed to configure ADC attenuation: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to configure ADC channel: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Characterize ADC for better accuracy
-    adc_chars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
-    if (adc_chars == NULL) {
-        LOG_ERROR(TAG, "Failed to allocate ADC characteristics");
-        return ESP_ERR_NO_MEM;
+    // Setup calibration (optional but recommended for accuracy)
+    // ESP32 uses line fitting calibration scheme
+    adc_cali_line_fitting_config_t cali_config = {
+        .unit_id = VOLUME_POTENTIOMETER_UNIT,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    ret = adc_cali_create_scheme_line_fitting(&cali_config, &adc_cali_handle);
+    if (ret != ESP_OK) {
+        LOG_WARN(TAG, "ADC calibration not available: %s (raw values will be used)", esp_err_to_name(ret));
+        adc_cali_handle = NULL;  // Continue without calibration
     }
 
-    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12,
-                             1100, adc_chars);
+    LOG_INFO(TAG, "Potentiometer initialized on ADC1_CH6 (GPIO 34)");
+    return ESP_OK;
+}
 
-    LOG_INFO(TAG, "Potentiometer initialized on ADC1_CH6");
+static esp_err_t slider_potentiometer_init(void)
+{
+    esp_err_t ret;
+
+    // ADC unit already initialized by volume_potentiometer_init()
+    // Just configure the additional channel
+
+    // Configure ADC channel for slider potentiometer
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH_12,        // 12-bit resolution (0-4095)
+        .atten = ADC_ATTEN_DB_12,           // 0-3.3V range (updated from DB_11)
+    };
+
+    ret = adc_oneshot_config_channel(adc_handle, SLIDER_POTENTIOMETER_CHANNEL, &config);
+    if (ret != ESP_OK) {
+        LOG_ERROR(TAG, "Failed to configure slider ADC channel: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    LOG_INFO(TAG, "Slider potentiometer initialized on ADC1_CH7 (GPIO 35)");
     return ESP_OK;
 }
 
@@ -201,9 +300,15 @@ esp_err_t inputs_init(void)
     }
 
     // Initialize potentiometer
-    ret = potentiometer_init();
+    ret = volume_potentiometer_init();
     if (ret != ESP_OK) {
         LOG_ERROR(TAG, "Failed to initialize potentiometer");
+        return ret;
+    }
+
+    ret = slider_potentiometer_init();
+    if (ret != ESP_OK) {
+        LOG_ERROR(TAG, "Failed to initialize slider potentiometer");
         return ret;
     }
 
@@ -225,8 +330,11 @@ esp_err_t inputs_get_data(input_data_t *data)
         }
     }
 
-    // Read potentiometer value
-    data->potentiometer = inputs_read_potentiometer();
+    // Read volume potentiometer value
+    data->volume_potentiometer = inputs_read_volume_potentiometer();
+
+    // Read slider potentiometer value
+    data->slider_potentiometer = inputs_read_slider_potentiometer();
 
     return ESP_OK;
 }
@@ -238,13 +346,31 @@ void inputs_clear_button_flags(void)
     }
 }
 
-uint16_t inputs_read_potentiometer(void)
+uint16_t inputs_read_volume_potentiometer(void)
 {
-    // Read raw ADC value
-    int raw_value = adc1_get_raw(VOLUME_POTENTIOMETER);
+    int raw_value = 0;
+    esp_err_t ret;
 
-    if (raw_value < 0) {
-        LOG_WARN(TAG, "Failed to read ADC");
+    // Read raw ADC value
+    ret = adc_oneshot_read(adc_handle, VOLUME_POTENTIOMETER_CHANNEL, &raw_value);
+    if (ret != ESP_OK) {
+        LOG_WARN(TAG, "Failed to read ADC: %s", esp_err_to_name(ret));
+        return 0;
+    }
+
+    // Return 12-bit value (0-4095)
+    return (uint16_t)raw_value;
+}
+
+uint16_t inputs_read_slider_potentiometer(void)
+{
+    int raw_value = 0;
+    esp_err_t ret;
+
+    // Read raw ADC value
+    ret = adc_oneshot_read(adc_handle, SLIDER_POTENTIOMETER_CHANNEL, &raw_value);
+    if (ret != ESP_OK) {
+        LOG_WARN(TAG, "Failed to read ADC: %s", esp_err_to_name(ret));
         return 0;
     }
 

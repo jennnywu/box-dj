@@ -134,7 +134,7 @@ esp_err_t initialize_main(void)
 esp_err_t start_motors(void)
 {
     esp_err_t ret;
-    const uint8_t motor_speed = 250; // Set desired speed (0-255)
+    const uint8_t motor_speed = 150; // Set desired speed (0-255)
     ret = motors_forward(motor_speed);
     if (ret != ESP_OK) {
         LOG_ERROR(TAG, "Failed to start motors: %s", esp_err_to_name(ret));
@@ -180,19 +180,24 @@ void encoder_read_task(void *pvParameters)
 {
     LOG_INFO(TAG, "Encoder reading task started on core %d", xPortGetCoreID());
 
-    // Reset encoder position to zero at start
-    encoder_reset_position();
+    // Reset both encoder positions to zero at start
+    encoder_reset_position(ENCODER_1);
+    encoder_reset_position(ENCODER_2);
 
     const uint32_t sample_period_ms = 20;
 
     while (1) {
-        // Read encoder position and velocity
-        int32_t position = encoder_get_position();
-        float velocity = encoder_get_velocity(sample_period_ms);
+        // Read encoder 1 data
+        int32_t enc1_pos = encoder_get_position(ENCODER_1);
+        float enc1_vel = encoder_get_velocity(ENCODER_1, sample_period_ms);
+
+        // Read encoder 2 data
+        int32_t enc2_pos = encoder_get_position(ENCODER_2);
+        float enc2_vel = encoder_get_velocity(ENCODER_2, sample_period_ms);
 
         // Log encoder data
-        LOG_INFO(TAG, "Encoder - Position: %ld counts, Velocity: %.2f counts/sec",
-                 (long)position, velocity);
+        LOG_INFO(TAG, "Enc1 - Pos: %ld, Vel: %.2f | Enc2 - Pos: %ld, Vel: %.2f",
+                 (long)enc1_pos, enc1_vel, (long)enc2_pos, enc2_vel);
 
         // Wait before next reading
         vTaskDelay(pdMS_TO_TICKS(sample_period_ms));

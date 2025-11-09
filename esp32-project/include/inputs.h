@@ -19,10 +19,10 @@
 // HEADERS                                                                                        */
 /*------------------------------------------------------------------------------------------------*/
 
-#include "driver/gpio.h"
-#include "esp_err.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "driver/gpio.h"
+#include "esp_err.h"
 
 /*------------------------------------------------------------------------------------------------*/
 // MACROS                                                                                         */
@@ -50,7 +50,8 @@ typedef struct {
 // Input data packet structure for I2C transmission
 typedef struct {
     uint8_t button_flags;   // Bit field: each bit represents a button (0-5)
-    uint16_t potentiometer; // Potentiometer value (0-4095, 12-bit ADC)
+    uint16_t volume_potentiometer; // Volume potentiometer value (0-4095, 12-bit ADC)
+    uint16_t slider_potentiometer; // Slider potentiometer value (0-4095, 12-bit ADC)
 } input_data_t;
 
 /*------------------------------------------------------------------------------------------------*/
@@ -83,10 +84,18 @@ void inputs_clear_button_flags(void);
 
 /**************************************************************************************************/
 /**
- * @brief Read potentiometer value (0-4095)
- * @return uint16_t Potentiometer ADC value
+ * @brief Read volume potentiometer value (0-4095)
+ * @return uint16_t Volume potentiometer ADC value
  */
 /**************************************************************************************************/
-uint16_t inputs_read_potentiometer(void);
+uint16_t inputs_read_volume_potentiometer(void);
+
+/**************************************************************************************************/
+/**
+ * @brief Read slider potentiometer value (0-4095)
+ * @return uint16_t Slider potentiometer ADC value
+ */
+/**************************************************************************************************/
+uint16_t inputs_read_slider_potentiometer(void);
 
 #endif // INPUTS_H

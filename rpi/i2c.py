@@ -132,8 +132,8 @@ class EncoderSmoother:
 
 class EncoderReader:
     """
-    Reads encoder data from ESP32 via I2C
-    Supports both traditional smoothing and predictive velocity tracking
+    Reads dual encoder data from ESP32 via I2C
+    Supports both traditional smoothing and predictive velocity tracking for each encoder
     """
     def __init__(self, bus, i2c_address, smoother=None, use_predictive=VELOCITY_PREDICTION):
         """
@@ -149,14 +149,18 @@ class EncoderReader:
         self.i2c_address = i2c_address
         self.use_predictive = use_predictive
 
+        # Separate trackers/smoothers for each encoder
         if use_predictive:
-            self.tracker = PredictiveVelocityTracker()
-            print(f"EncoderReader@0x{i2c_address:02X}: Using predictive velocity (PPR={ENCODER_PPR})")
+            self.tracker_enc1 = PredictiveVelocityTracker()
+            self.tracker_enc2 = PredictiveVelocityTracker()
+            print(f"EncoderReader@0x{i2c_address:02X}: Using predictive velocity for 2 encoders (PPR={ENCODER_PPR})")
         else:
-            self.smoother = smoother if smoother else EncoderSmoother()
-            print(f"EncoderReader@0x{i2c_address:02X}: Using traditional smoothing")
+            self.smoother_enc1 = smoother if smoother else EncoderSmoother()
+            self.smoother_enc2 = EncoderSmoother()
+            print(f"EncoderReader@0x{i2c_address:02X}: Using traditional smoothing for 2 encoders")
 
-        self.last_position = 0
+        self.last_enc1_position = 0
+        self.last_enc2_position = 0
         self.last_timestamp = 0
         self.read_errors = 0
         self.total_reads = 0
@@ -166,31 +170,41 @@ class EncoderReader:
         Read raw data from ESP32 via I2C
 
         Returns:
-            tuple: (position, velocity_raw, timestamp, button_flags, potentiometer) or None on error
+            tuple: (enc1_pos, enc1_vel, enc2_pos, enc2_vel, timestamp, button_flags, volume_pot, slider_pot) or None on error
         """
         try:
-            # Read 15 bytes from ESP32 slave
+            # Read 25 bytes from ESP32 slave
             data = self.bus.read_i2c_block_data(self.i2c_address, 0, DATA_PACKET_SIZE)
 
             # Unpack data (little-endian format)
-            # Position (4 bytes, signed int32)
-            position = struct.unpack('<i', bytes(data[0:4]))[0]
+            # Encoder 1 Position (4 bytes, signed int32)
+            enc1_position = struct.unpack('<i', bytes(data[0:4]))[0]
 
-            # Velocity (4 bytes, signed int32, fixed-point * 100)
-            velocity_fixed = struct.unpack('<i', bytes(data[4:8]))[0]
-            velocity_raw = velocity_fixed / 100.0
+            # Encoder 1 Velocity (4 bytes, signed int32, fixed-point * 100)
+            enc1_vel_fixed = struct.unpack('<i', bytes(data[4:8]))[0]
+            enc1_velocity_raw = enc1_vel_fixed / 100.0
+
+            # Encoder 2 Position (4 bytes, signed int32)
+            enc2_position = struct.unpack('<i', bytes(data[8:12]))[0]
+
+            # Encoder 2 Velocity (4 bytes, signed int32, fixed-point * 100)
+            enc2_vel_fixed = struct.unpack('<i', bytes(data[12:16]))[0]
+            enc2_velocity_raw = enc2_vel_fixed / 100.0
 
             # Timestamp (4 bytes, unsigned int32)
-            timestamp = struct.unpack('<I', bytes(data[8:12]))[0]
+            timestamp = struct.unpack('<I', bytes(data[16:20]))[0]
 
             # Button flags (1 byte, unsigned int8)
-            button_flags = data[12]
+            button_flags = data[20]
 
-            # Potentiometer (2 bytes, unsigned int16)
-            potentiometer = struct.unpack('<H', bytes(data[13:15]))[0]
+            # Volume Potentiometer (2 bytes, unsigned int16)
+            volume_pot = struct.unpack('<H', bytes(data[21:23]))[0]
+
+            # Slider Potentiometer (2 bytes, unsigned int16)
+            slider_pot = struct.unpack('<H', bytes(data[23:25]))[0]
 
             self.total_reads += 1
-            return position, velocity_raw, timestamp, button_flags, potentiometer
+            return enc1_position, enc1_velocity_raw, enc2_position, enc2_velocity_raw, timestamp, button_flags, volume_pot, slider_pot
 
         except Exception as e:
             self.read_errors += 1
@@ -200,19 +214,24 @@ class EncoderReader:
 
     def read(self):
         """
-        Read all data from ESP32 and calculate smoothed or predicted velocity
+        Read all data from ESP32 and calculate smoothed or predicted velocity for both encoders
 
         Returns:
             dict: {
-                'position': int,
-                'velocity': float (smoothed or predicted, counts/s),
-                'velocity_raw': float (from ESP32),
+                'enc1_position': int,
+                'enc1_velocity': float (smoothed or predicted, counts/s),
+                'enc1_velocity_raw': float (from ESP32),
+                'enc2_position': int,
+                'enc2_velocity': float (smoothed or predicted, counts/s),
+                'enc2_velocity_raw': float (from ESP32),
                 'timestamp': int (ms),
                 'button_flags': int (byte with button states),
                 'buttons': dict (button_name -> bool),
                 'buttons_pressed': list (names of pressed buttons),
-                'potentiometer': int (0-4095),
-                'potentiometer_normalized': float (0.0-1.0),
+                'volume_pot': int (0-4095),
+                'volume_pot_normalized': float (0.0-1.0),
+                'slider_pot': int (0-4095),
+                'slider_pot_normalized': float (0.0-1.0),
                 'predicted': bool (True if using prediction)
             } or None on error
         """
@@ -221,17 +240,24 @@ class EncoderReader:
         if raw_data is None:
             return None
 
-        position, velocity_raw, timestamp, button_flags, potentiometer = raw_data
+        enc1_position, enc1_velocity_raw, enc2_position, enc2_velocity_raw, timestamp, button_flags, volume_pot, slider_pot = raw_data
 
-        # Calculate velocity based on mode
+        # Calculate velocity for encoder 1
         if self.use_predictive:
-            velocity = self.tracker.update(position, timestamp)
+            enc1_velocity = self.tracker_enc1.update(enc1_position, timestamp)
             predicted = True
         else:
-            velocity = self.smoother.update(position, timestamp)
+            enc1_velocity = self.smoother_enc1.update(enc1_position, timestamp)
             predicted = False
 
-        self.last_position = position
+        # Calculate velocity for encoder 2
+        if self.use_predictive:
+            enc2_velocity = self.tracker_enc2.update(enc2_position, timestamp)
+        else:
+            enc2_velocity = self.smoother_enc2.update(enc2_position, timestamp)
+
+        self.last_enc1_position = enc1_position
+        self.last_enc2_position = enc2_position
         self.last_timestamp = timestamp
 
         # Decode button flags
@@ -243,19 +269,25 @@ class EncoderReader:
             if is_pressed:
                 buttons_pressed.append(name)
 
-        # Normalize potentiometer value (0-4095 -> 0.0-1.0)
-        pot_normalized = potentiometer / float(POTENTIOMETER_MAX)
+        # Normalize potentiometer values (0-4095 -> 0.0-1.0)
+        volume_pot_normalized = volume_pot / float(POTENTIOMETER_MAX)
+        slider_pot_normalized = slider_pot / float(POTENTIOMETER_MAX)
 
         return {
-            'position': position,
-            'velocity': velocity,
-            'velocity_raw': velocity_raw,
+            'enc1_position': enc1_position,
+            'enc1_velocity': enc1_velocity,
+            'enc1_velocity_raw': enc1_velocity_raw,
+            'enc2_position': enc2_position,
+            'enc2_velocity': enc2_velocity,
+            'enc2_velocity_raw': enc2_velocity_raw,
             'timestamp': timestamp,
             'button_flags': button_flags,
             'buttons': buttons,
             'buttons_pressed': buttons_pressed,
-            'potentiometer': potentiometer,
-            'potentiometer_normalized': pot_normalized,
+            'volume_pot': volume_pot,
+            'volume_pot_normalized': volume_pot_normalized,
+            'slider_pot': slider_pot,
+            'slider_pot_normalized': slider_pot_normalized,
             'predicted': predicted
         }
 
@@ -266,21 +298,23 @@ class EncoderReader:
         return self.read_errors / self.total_reads
 
     def reset_tracker(self):
-        """Reset the velocity tracker/smoother"""
+        """Reset the velocity trackers/smoothers for both encoders"""
         if self.use_predictive:
-            self.tracker.reset()
+            self.tracker_enc1.reset()
+            self.tracker_enc2.reset()
         else:
-            self.smoother.reset()
+            self.smoother_enc1.reset()
+            self.smoother_enc2.reset()
 
 
 def test_encoder_reader():
-    """Test function to verify encoder reading and input data"""
+    """Test function to verify dual encoder reading and input data"""
     import time
     from config import I2C_BUS, ESP32_DECK1_ADDR
 
-    print("Testing ESP32 Data Reader (Encoder + Inputs)")
+    print("Testing ESP32 Dual Encoder + Dual Potentiometer Data Reader")
     print(f"Reading from ESP32 at address 0x{ESP32_DECK1_ADDR:02X}")
-    print("=" * 80)
+    print("=" * 120)
 
     bus = smbus2.SMBus(I2C_BUS)
     encoder = EncoderReader(bus, ESP32_DECK1_ADDR)
@@ -295,10 +329,11 @@ def test_encoder_reader():
 
                 # Print all data
                 print(f"[{data['timestamp']:8d} ms] "
-                      f"Pos: {data['position']:6d} | "
-                      f"Vel: {data['velocity']:7.1f} | "
-                      f"Pot: {data['potentiometer']:4d} ({data['potentiometer_normalized']:.2f}) | "
-                      f"Buttons: {buttons_str}")
+                      f"E1: {data['enc1_position']:6d} ({data['enc1_velocity']:6.1f}) | "
+                      f"E2: {data['enc2_position']:6d} ({data['enc2_velocity']:6.1f}) | "
+                      f"Vol: {data['volume_pot']:4d} | "
+                      f"Sld: {data['slider_pot']:4d} | "
+                      f"Btn: {buttons_str}")
 
             time.sleep(0.02)  # 50Hz
 

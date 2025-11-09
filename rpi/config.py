@@ -13,9 +13,9 @@ DUAL_DECK_MODE = False  # Set to True for two-deck mixing, False for single deck
 
 # ==================== I2C CONFIGURATION ====================
 I2C_BUS = 1                    # RPi5 I2C bus (usually 1)
-ESP32_DECK1_ADDR = 0x42        # ESP32 slave address for Deck 1
-ESP32_DECK2_ADDR = 0x43        # ESP32 slave address for Deck 2 (if using two)
-DATA_PACKET_SIZE = 15          # 15 bytes: position(4) + velocity(4) + timestamp(4) + button_flags(1) + potentiometer(2)
+ESP32_DECK1_ADDR = 0x42        # ESP32 slave address for Deck 1 (single ESP32 with dual encoders)
+ESP32_DECK2_ADDR = 0x43        # ESP32 slave address for Deck 2 (if using two ESP32s - not implemented yet)
+DATA_PACKET_SIZE = 25          # 25 bytes: enc1_pos(4) + enc1_vel(4) + enc2_pos(4) + enc2_vel(4) + timestamp(4) + button_flags(1) + volume_pot(2) + slider_pot(2)
 I2C_POLL_RATE_MS = 20          # Poll I2C every 20ms (50Hz)
 
 # ==================== BUTTON CONFIGURATION ====================

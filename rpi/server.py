@@ -37,8 +37,8 @@ CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 if not CLIENT_ID or not CLIENT_SECRET:
     raise ValueError("Missing Spotify credentials in .env file")
 
-# Use a relative path for downloads
-DOWNLOAD_DIR = "dj_downloads"
+# Use an absolute path for downloads on a Raspberry Pi
+DOWNLOAD_DIR = "/home/pi/dj_downloads"
 PORT = 8080 
 TOKEN_CACHE = {"access_token": None, "expires_at": 0}
 

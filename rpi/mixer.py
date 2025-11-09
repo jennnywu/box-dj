@@ -40,6 +40,15 @@ class DJDeck:
         self.rate = Gst.ElementFactory.make("pitch", f"rate{deck_id}")
         self.volume_pad = None # This will be the mixer sink pad
 
+        # HACK: Set a default file location to allow the pipeline to preroll.
+        # This prevents the "No file name specified for reading" error on startup.
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        dummy_path = os.path.join(script_dir, "example-mp3/charli-xcx-365.mp3")
+        if os.path.exists(dummy_path):
+            self.src.set_property("location", dummy_path)
+        else:
+            print(f"!!! WARNING: Dummy MP3 for Deck {self.deck_id} not found at {dummy_path}. Pipeline may fail to start.")
+
         if not all([self.src, self.decode, self.convert, self.rate]):
             raise RuntimeError(f"Failed to create GStreamer elements for Deck {deck_id}")
 

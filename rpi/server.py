@@ -6,9 +6,9 @@ import time
 import requests
 import base64
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 from flask_socketio import SocketIO, emit
-from flask_cors import CORS # Required for the token endpoint to work locally
+from flask_cors import CORS 
 import logging
 
 logging.basicConfig(
@@ -46,6 +46,10 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
+
+# Master playlist (frontend can request for this)
+PLAYLIST = []
+
 def get_spotify_token():
     now = time.time()
     if TOKEN_CACHE["access_token"] and now < TOKEN_CACHE["expires_at"]:
@@ -81,29 +85,42 @@ def token_endpoint():
     
     return jsonify({"access_token": token})
 
+# --- Utility to Broadcast Playlist State ---
+def broadcast_playlist_update(client_sid=None):
+    """Sends the current state of the PLAYLIST to a specific client or all."""
+    # Send the master song list to the requesting client (or all)
+    # The FE will overwrite its local `songs` list with this data
+    if client_sid:
+        app.logger.info(f"Emitting PLAYLIST to specific client: {client_sid}")
+        socketio.emit('playlist_update', {'songs': PLAYLIST}, to=client_sid)
+    else:
+        app.logger.info("Broadcasting PLAYLIST to all clients.")
+        socketio.emit('playlist_update', {'songs': PLAYLIST}, broadcast=True)
 
-# @app.route("/token")
-# def token_endpoint():
-#     """HTTP endpoint accessible at http://0.0.0.0:8080/token"""
-#     print("GETTING TOKEN")
-#     print("HIT TOKEN ENDPOINT...")
-#     token = get_spotify_token()
-#     print("TOKEN FOUND", token)
-#     return jsonify({"access_token": token})
-
-# --- Song Download Logic (Integrated) ---
-
-def download_song(title: str, artist: str):
+def download_song(song_data: dict):
     """
-    Downloads a song using yt-dlp.
-    NOTE: Should be run in a background task in a production app.
+    Downloads a song using yt-dlp in a background task.
     """
+    title = song_data.get("title")
+    artist = song_data.get("artist")
+    
+    # Send initial update to *all* clients
+    socketio.emit('status_update', 
+                  {'message': f'Download started: {artist} - {title}'},
+                  broadcast=True) 
+    
     download_command = f"yt-dlp -x --audio-format mp3 --no-playlist 'ytsearch:{artist} {title}' -o '{DOWNLOAD_DIR}/%(title)s.%(ext)s'"
-    print(f"Executing: {download_command}")
-    os.system(download_command)
-    print(f"Download complete for: {artist} - {title}")
-    emit('status_update', {'message': f'Download complete: {artist} - {title}'})
-    return
+    app.logger.info(f"Executing: {download_command}")
+    
+    # ⚠️ This is the blocking I/O call that is now safely in the background
+    os.system(download_command) 
+    
+    app.logger.info(f"Download complete for: {artist} - {title}")
+    
+    # Send final update to *all* clients once the download finishes
+    socketio.emit('status_update', 
+                  {'message': f'Download complete: {artist} - {title}'}, 
+                  broadcast=True)
 
 # --- Standard Flask HTTP Route ---
 @app.route('/test')
@@ -118,40 +135,59 @@ def index():
 
 # --- SocketIO Event Handlers ---
 
+    
 @socketio.on('connect')
 def handle_connect():
     """Called when a new client establishes a Socket.IO connection."""
-    app.logger.info("Client connected via Socket.IO")
-    print("Client connected via Socket.IO")
+    app.logger.info(f"Client connected via Socket.IO. SID: {request.sid}")
+    # immediately send client the current playlist
+    broadcast_playlist_update(client_sid=request.sid)
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Called when a client disconnects."""
     print("Client disconnected")
+    
+      
 
 @socketio.on('message')
 def handle_json_message(data):
     """Handles generic messages sent by the client."""
-    print(f"< Received message: {data}")
+    app.logger.info(f"< Received message: {data}")
 
     try:
         if isinstance(data, dict):
             action = data.get("action")
+            song_data = {
+                'title': data.get("title"),
+                'artist': data.get("artist"),
+                'album': data.get("album"),
+                'duration': data.get("duration"),
+                'duration_ms': data.get("duration_ms"),
+            }
             
             if action == "ADD_SONG":
-                # Calls the blocking function
-                download_song(data.get("title"), data.get("artist"))
-            
+                # 1. Update the master state and broadcast immediately (NON-BLOCKING)
+                PLAYLIST.append(song_data)
+                broadcast_playlist_update() 
+                
+                # 2. Start the download process in a separate background thread/greenlet
+                # This function returns immediately, letting the server handle other traffic.
+                socketio.start_background_task(download_song, song_data)  
+                
             elif action == "PLAY_SONG":
-                print("PLAY_SONG: Not Implemented")
-            
+                app.logger.info(f"PLAY_SONG: {song_data.get('title')} - Not Implemented (But logic is here)")
+                # TODO: actually play the song on the RPI
+            elif data == "resume" or data == "pause":
+                app.logger.info(f"Playback control: {data} - Not Implemented")
+
             else:
-                print(f"Unknown action: {action}")
+                app.logger.warning(f"Unknown action: {action}")
         else:
-            print("Received non-dictionary data, ignoring.")
+            app.logger.warning("Received non-dictionary data, ignoring.")
 
     except Exception as e:
-        print(f"!!! An error occurred processing the message: {e}")
+        app.logger.error(f"!!! An error occurred processing the message: {e}")
         emit('error', {'message': f'Server error: {e}'})
 
 # --- Main Execution ---

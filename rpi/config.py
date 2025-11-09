@@ -82,3 +82,9 @@ DEBUG_PRINT_VOLUME = True      # Print volume changes
 # ==================== SMOOTHING SETTINGS ====================
 SMOOTHING_ALPHA = 0.9          # Exponential smoothing factor for rate transitions (0.0–1.0)
 MAX_RATE_DELTA_PER_SEC = 1.6   # Optional hard cap on rate change speed (per second)
+
+# ==================== SPEED THRESHOLDING ====================
+NORMAL_SPEED_MIN = -120          # Minimum normal speed for smoothing calculations
+NORMAL_SPEED_MAX = -80         # Maximum normal speed for smoothing calculations 
+# TIME_TO_AVERAGE_SECONDS = 5     # Number of samples to average for speed thresholding
+

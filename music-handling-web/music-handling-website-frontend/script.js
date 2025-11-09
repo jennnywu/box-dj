@@ -1,6 +1,9 @@
 // configuration
 const PI_IP = "172.20.10.8";
 const PI_PORT = 8080;
+const USE_FORWARDER = true; // Use ngrok to forward or not
+// const WEBSOCKET_ADDRESS = 
+const WEBSOCKET_ADDRESS = USE_FORWARDER ? "https://a6570870fa79.ngrok-free.app" : `ws://${PI_IP}:${PI_PORT}`;
 
 let SPOTIFY_TOKEN = "";
 let ws;
@@ -24,8 +27,8 @@ async function getTokenFromServer() {
 
 // connect to rpi websocket
 function connect() {
-  console.log("Attempting WebSocket connection to", `ws://${PI_IP}:${PI_PORT}`);
-  ws = new WebSocket(`ws://${PI_IP}:${PI_PORT}`);
+  console.log("Attempting WebSocket connection to", WEBSOCKET_ADDRESS);
+  ws = new WebSocket(WEBSOCKET_ADDRESS);
 
   ws.onopen = () => {
     updateStatus("Connected");

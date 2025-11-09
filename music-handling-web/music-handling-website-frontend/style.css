@@ -13,7 +13,7 @@ html, body {
   background: linear-gradient(180deg, #2a2a2a 0%, #121212 100%);
 }
 
-/* Search Bar */
+/* --- Search Bar --- */
 .header-bar {
   display: flex;
   justify-content: center;
@@ -49,7 +49,7 @@ html, body {
 }
 .search-container button:hover { background: #1ed760; }
 
-/* Search Dropdown */
+/* --- Search Dropdown --- */
 .search-results {
   position: absolute;
   top: 45px;
@@ -58,26 +58,55 @@ html, body {
   background-color: #181818;
   border-radius: 8px;
   box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-  width: 350px;
+  width: 500px; /* Increased width to accommodate buttons on one line */
   max-height: 300px;
   overflow-y: auto;
   z-index: 10;
   display: none;
 }
 .search-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 0.6em 1em;
   border-bottom: 1px solid #282828;
-  cursor: pointer;
   color: #b3b3b3;
 }
 .search-result:hover { background-color: #282828; color: #fff; }
 
-/* Playlist Header */
+.search-result .song-info {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 15px; /* Ensure space before buttons */
+}
+
+/* Style for the "Add D1" and "Add D2" buttons */
+.search-result button {
+  background: #1db954; /* Spotify green */
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  padding: 5px 10px;
+  font-size: 0.8em;
+  cursor: pointer;
+  margin-left: 8px; /* Slightly increased space between buttons for better separation */
+  flex-shrink: 0; /* Prevent buttons from shrinking */
+}
+.search-result button:hover {
+  background: #1ed760; /* Slightly lighter green on hover */
+}
+
+/* --- Playlist Header (Unified) --- */
 .playlist-header {
   display: flex;
   align-items: center;
   gap: 1.5em;
   margin-bottom: 2em;
+  /* Removed border-bottom here; will use it to separate the header from the decks-container */
+  padding-bottom: 20px;
+  border-bottom: 1px solid #282828;
 }
 .playlist-header img {
   width: 180px;
@@ -89,7 +118,34 @@ html, body {
 .playlist-info h1 { margin: 0; font-size: 2.3em; }
 .playlist-info p { color: #b3b3b3; margin: .3em 0; }
 
-/* Playlist Table */
+/* --- Dual Deck Container --- */
+.decks-container {
+    display: flex;
+    gap: 40px; /* Space between Deck 1 and Deck 2 */
+    width: 100%;
+    margin-top: 2em;
+}
+
+.dj-deck {
+    flex: 1; /* Makes both decks take up equal width */
+    min-width: 0;
+}
+
+.dj-deck h2 {
+    font-size: 1.5em;
+    margin: 0 0 0.5em;
+    color: #fff;
+}
+
+.playlist-stats {
+    margin-bottom: 1em;
+    font-size: 0.9em;
+    color: #b3b3b3;
+}
+/* ------------------------------------------- */
+
+
+/* --- Playlist Table --- */
 table { width: 100%; border-collapse: collapse; color: #b3b3b3; }
 th, td { text-align: left; padding: .75em; }
 th {
@@ -118,7 +174,7 @@ tr:hover { background-color: #1e1e1e; color: #fff; }
 
 #status { margin-top: 2em; color: #b3b3b3; font-weight: 600; }
 
-/* Now Playing Bar */
+/* --- Now Playing Bar --- */
 .now-playing {
   position: fixed;
   bottom: 0; left: 0;
@@ -128,13 +184,42 @@ tr:hover { background-color: #1e1e1e; color: #fff; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2em;
+  padding: 0 4em; 
   box-shadow: 0 -2px 6px rgba(0,0,0,0.3);
 }
 .now-playing .song-info { display: flex; align-items: center; gap: 1em; }
 .now-playing img {
   width: 50px; height: 50px;
   object-fit: cover; border-radius: 4px;
+}
+.now-playing .controls-bar {
+    display: flex;
+    align-items: center;
+    gap: 30px; /* Increased gap to separate D1, D2, and utility */
+}
+
+.now-playing .deck-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 15px;
+    border-right: 1px solid #282828; /* Visual separator */
+}
+
+.now-playing .deck-controls:last-child {
+    border-right: none;
+}
+
+.now-playing .deck-controls span {
+    color: #b3b3b3;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.now-playing .utility-controls {
+    display: flex;
+    align-items: center;
+    gap: 1.2em;
 }
 .song-details { display: flex; flex-direction: column; }
 .song-details span:first-child { font-weight: 600; color: #fff; }
@@ -145,3 +230,9 @@ tr:hover { background-color: #1e1e1e; color: #fff; }
   font-size: 1.4em; cursor: pointer; transition: transform .1s;
 }
 .controls-bar button:hover { transform: scale(1.2); color: #1ed760; }
+
+.speaker-image {
+    transform: rotate(-90deg);
+    transform-origin: center;
+    filter: grayscale(100%);
+}

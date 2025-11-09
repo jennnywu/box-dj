@@ -1,64 +1,101 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Spotify DJ</title>
-  <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <meta charset="UTF-8" />
+    <title>Spotify DJ Dual Deck</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
-  <div class="main">
-    <!-- search bar -->
-    <div class="header-bar">
-      <div class="search-container">
-        <input type="text" id="songSearch" placeholder="Search Spotify..." />
-        <button id="searchBtn">🔍</button>
-      </div>
-      <div id="searchResults" class="search-results"></div>
+    <div class="main">
+        <div class="header-bar">
+            <div class="search-container">
+                <input type="text" id="songSearch" placeholder="Search Spotify..." />
+                <button id="searchBtn">🔍</button>
+            </div>
+            <div id="searchResults" class="search-results"></div>
+        </div>
+        
+        <div class="playlist-header">
+            <img src="playlist.jpg" alt="Playlist Cover" />
+            <div class="playlist-info">
+                <h1>DJ Box Mix</h1>
+                <p>by jenny</p>
+                <p class="playlist-meta">
+                    Master List · <span id="songCount">0 songs · </span><span id="songLength">0 hr 0 min</span>
+                </p>
+            </div>
+        </div>
+        
+        <div class="decks-container">
+            
+            <section id="deck1Playlist" class="dj-deck">
+                <h2>Deck 1 Queue</h2>
+                <p class="playlist-stats">
+                    <span id="deck1SongCount">0 songs · </span>
+                    <span id="deck1SongLength">0 min</span>
+                </p>
+            
+                <table id="deck1Table" class="playlist-table">
+                    <thead>
+                        <tr>
+                            <th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Time</th><th>Play</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        </tbody>
+                </table>
+            </section>
+            
+            <section id="deck2Playlist" class="dj-deck">
+                <h2>Deck 2 Queue</h2>
+                <p class="playlist-stats">
+                    <span id="deck2SongCount">0 songs · </span>
+                    <span id="deck2SongLength">0 min</span>
+                </p>
+            
+                <table id="deck2Table" class="playlist-table">
+                    <thead>
+                        <tr>
+                            <th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Time</th><th>Play</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        </tbody>
+                </table>
+            </section>
+            
+        </div>
+        
+        <div id="status">Status: Not connected</div>
     </div>
 
-    <!-- playlist header -->
-    <div class="playlist-header">
-      <img src="playlist.jpg" alt="Playlist Cover" />
-      <div class="playlist-info">
-        <h1>Playlist</h1>
-        <p>DJ Box</p>
-        <p class="playlist-meta">
-          by jenny · <span id="songCount">0 songs · </span><span id="songLength">0 hr 0 min</span>
-        </p>
-      </div>
-    </div>
+    <div class="now-playing">
+        <div class="song-info">
+            <img src="speaker.svg" alt="Now Playing" class="speaker-image"/>
+            <div class="song-details">
+                <span id="currentSong">No song playing</span> 
+                <span id="artistName">DJ Box</span>
+            </div>
+        </div>
+        
+        <div class="controls-bar">
+            <div class="deck-controls">
+                <span>DECK 1:</span>
+                <button onclick="sendRaw('previous_deck1')">⏮</button>
+                <button onclick="togglePlay('deck1')" id="playPauseBtn1">▶</button>
+                <button onclick="sendRaw('next_deck1')">⏭</button>
+            </div>
 
-    <!-- playlist table -->
-    <table id="playlist">
-      <thead>
-        <tr>
-          <th>#</th><th>Title</th><th>Artist</th><th>Album</th><th>Duration</th><th></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+            <div class="deck-controls">
+                <span>DECK 2:</span>
+                <button onclick="sendRaw('previous_deck2')">⏮</button>
+                <button onclick="togglePlay('deck2')" id="playPauseBtn2">▶</button>
+                <button onclick="sendRaw('next_deck2')">⏭</button>
+            </div>
+        </div>
+    </div> 
 
-    <div id="status">Status: Not connected</div>
-  </div>
-
-  <!-- now playing bar -->
-  <div class="now-playing">
-    <div class="song-info">
-      <img src="playlist.jpg" alt="Now Playing" />
-      <div class="song-details">
-        <span id="currentSong">No song playing</span>
-        <span id="artistName">DJ Box</span>
-      </div>
-    </div>
-    <div class="controls-bar">
-      <button onclick="sendRaw('previous')">⏮</button>
-      <button onclick="togglePlay()" id="playPauseBtn">▶</button>
-      <button onclick="sendRaw('next')">⏭</button>
-      <button onclick="sendRaw('shuffle')">🔀</button>
-    </div>
-  </div>
-
-  <script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>

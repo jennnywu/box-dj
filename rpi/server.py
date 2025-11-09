@@ -13,7 +13,7 @@ from flask_socketio import SocketIO, emit
 from flask_cors import CORS 
 import logging
 
-from play_song import Player
+from player_class import Player
 
 
 # ============ LOGGING ============ #
@@ -62,7 +62,7 @@ player = Player()
 # Graceful shutdown for the player
 def stop_player():
     print("Shutting down player...")
-    player.stop()
+    player.cleanup()
 atexit.register(stop_player)
 
 
@@ -236,7 +236,9 @@ def handle_json_message(data):
                     path = song_to_play.get('download_path')
                     if path and os.path.exists(path):
                         app.logger.info(f"--> Found song at path: '{path}'. Playing now.")
-                        player.play_song(path)
+                        deck_num = 1 if deck_id == 'deck1' else 2
+                        player.load_song_on_deck(deck_num, path)
+                        player.play_deck(deck_num)
                     else:
                         app.logger.warning(f"--> WARNING: Song '{title_to_play}' is not downloaded yet.")
                 else:
@@ -249,10 +251,10 @@ def handle_json_message(data):
         elif isinstance(data, str):
             if data.startswith('pause_'):
                 app.logger.info(f"Pausing player")
-                player.pause()
+                player.pause_all()
             elif data.startswith('resume_'):
                 app.logger.info(f"Resuming player")
-                player.resume()
+                player.play_all()
             else:
                 app.logger.warning(f"Unknown string command: {data}")
 

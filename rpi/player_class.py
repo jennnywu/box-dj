@@ -21,7 +21,7 @@ HOME_PATH = "/home/jenny/box-dj/"
 class Player:
     """Manages the GStreamer pipeline and MainLoop in a background thread."""
 
-    def __init__(self, playlist: List[str]):
+    def __init__(self, playlist: Optional[List[str]] = None):
         """
         Initializes the GStreamer environment and starts the background thread.
         :param playlist: A list of full file paths for the songs.
@@ -32,7 +32,7 @@ class Player:
         self.pipeline: Optional[Gst.Pipeline] = None
         self.loop = GLib.MainLoop()
         
-        self.playlist: List[str] = playlist
+        self.playlist: List[str] = playlist or []
         self.current_song_index: int = 0
         self.active_deck: int = 1 # 1 or 2
         
@@ -75,7 +75,8 @@ class Player:
         if t == Gst.MessageType.EOS:
             print("End-Of-Stream reached on an element.")
             # Auto-advance to the next song in the playlist
-            GLib.idle_add(self._load_next_song)
+            if self.playlist:
+                GLib.idle_add(self._load_next_song)
         elif t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
             print(f"\n!!! GStreamer Error: {err.message} (Debug: {debug}) !!!\n")
@@ -137,8 +138,12 @@ class Player:
         bus.connect("message", self._on_bus_message)
         
         # Load initial files and set initial state
-        self._load_file_on_deck(1, self.playlist[0])
-        self._load_file_on_deck(2, self.playlist[1] if len(self.playlist) > 1 else self.playlist[0])
+        if self.playlist:
+            self._load_file_on_deck(1, self.playlist[0])
+            if len(self.playlist) > 1:
+                self._load_file_on_deck(2, self.playlist[1])
+            else:
+                self._load_file_on_deck(2, self.playlist[0])
         
         # Set to PAUSED initially, ready to play
         self.pipeline.set_state(Gst.State.PAUSED)
@@ -173,6 +178,10 @@ class Player:
 
     def _load_next_song(self):
         """Internal: Loads the next song in the playlist onto the inactive deck (GLib thread)."""
+        if not self.playlist:
+            print("Playlist is empty, cannot load next song.")
+            return False
+
         self.current_song_index = (self.current_song_index + 1) % len(self.playlist)
         next_song_path = self.playlist[self.current_song_index]
         inactive_deck = 2 if self.active_deck == 1 else 1
@@ -197,6 +206,16 @@ class Player:
         return False
 
     # --- Public Methods for Server/Websocket Control ---
+
+    def load_song_on_deck(self, deck_num: int, file_path: str):
+        """Public API to load a song onto a deck from an external thread."""
+        # Using idle_add to ensure thread safety with GLib's main loop
+        GLib.idle_add(self._glib_load_song, deck_num, file_path)
+
+    def _glib_load_song(self, deck_num, file_path):
+        """Internal wrapper to call the loading function in the GLib thread."""
+        self._load_file_on_deck(deck_num, file_path)
+        return GLib.SOURCE_REMOVE # Ensures this function is only called once per idle_add
 
     def play_all(self):
         """Sets the entire pipeline to PLAYING."""

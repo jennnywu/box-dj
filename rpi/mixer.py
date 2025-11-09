@@ -123,7 +123,7 @@ class DJMixer:
         # --- Create shared output elements ---
         mixer = Gst.ElementFactory.make("audiomixer", "mixer")
         output_convert = Gst.ElementFactory.make("audioconvert", "output_convert")
-        output_sink = Gst.ElementFactory.make("alsasink", "output_sink")
+        output_sink = Gst.ElementFactory.make("pulsesink", "output_sink")
 
         if not all([mixer, output_convert, output_sink]):
             raise RuntimeError("Failed to create mixer or output elements.")

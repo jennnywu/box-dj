@@ -32,9 +32,9 @@
 /*------------------------------------------------------------------------------------------------*/
 
 // Motor A pins
-#define MOTOR_A_IN1         GPIO_NUM_18
-#define MOTOR_A_IN2         GPIO_NUM_19
-#define MOTOR_A_EN          GPIO_NUM_21
+// #define MOTOR_A_IN1         GPIO_NUM_18
+// #define MOTOR_A_IN2         GPIO_NUM_19
+// #define MOTOR_A_EN          GPIO_NUM_21
 
 // Motor B pins
 #define MOTOR_B_IN3         GPIO_NUM_22
@@ -239,7 +239,7 @@ static void set_motor_direction(motor_direction_t direction)
 
 static void set_motor_pwm(uint8_t speed)
 {
-    LOG_DEBUG(TAG, "Setting PWM speed: %d (on EN pins %d, %d)", speed, MOTOR_A_EN, MOTOR_B_EN);
+    LOG_DEBUG(TAG, "Setting PWM speed: %d (on EN pins %d)", speed, MOTOR_B_EN);
 
     // Set Motor A speed
     // ledc_set_duty(PWM_MODE, MOTOR_A_CHANNEL, speed);

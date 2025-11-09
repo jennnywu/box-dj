@@ -7,6 +7,7 @@ Also handles button input and potentiometer data
 """
 
 import smbus2
+from smbus2 import i2c_msg
 import struct
 import time
 from collections import deque
@@ -173,8 +174,11 @@ class EncoderReader:
             tuple: (enc1_pos, enc1_vel, enc2_pos, enc2_vel, timestamp, button_flags, volume_pot, slider_pot) or None on error
         """
         try:
-            # Read 25 bytes from ESP32 slave
-            data = self.bus.read_i2c_block_data(self.i2c_address, 0, DATA_PACKET_SIZE)
+            # Read 25 bytes from ESP32 slave (no register addressing)
+            # ESP32 is a simple I2C slave - just read data directly
+            msg = i2c_msg.read(self.i2c_address, DATA_PACKET_SIZE)
+            self.bus.i2c_rdwr(msg)
+            data = list(msg)
 
             # Unpack data (little-endian format)
             # Encoder 1 Position (4 bytes, signed int32)

@@ -32,9 +32,9 @@
 /*------------------------------------------------------------------------------------------------*/
 
 // LED GPIO pins (active-low sinks)
-#define LED_1_GPIO    GPIO_NUM_6
-#define LED_2_GPIO    GPIO_NUM_7
-#define LED_3_GPIO    GPIO_NUM_8
+#define LED_1_GPIO    GPIO_NUM_18
+#define LED_2_GPIO    GPIO_NUM_19
+#define LED_3_GPIO    GPIO_NUM_21
 
 // LED states (active-low logic)
 #define LED_ON        0    // GPIO LOW = sink current = LED ON

@@ -3,8 +3,9 @@ const PI_IP = "172.20.10.8";
 const PI_PORT = 8080;
 const USE_FORWARDER = true; // Use ngrok to forward or not
 
-const BASE_URL = USE_FORWARDER ? "https://e8894d0e3d6a.ngrok-free.app" : `http://${PI_IP}:${PI_PORT}`;
-const WEBSOCKET_ADDRESS = BASE_URL; // Socket.IO uses the BASE_URL
+const DOMAIN = USE_FORWARDER ? "5cb7be3d6edf.ngrok-free.app" : `${PI_IP}:${PI_PORT}`;
+const BASE_URL = USE_FORWARDER ? `https://${DOMAIN}` : `http://${DOMAIN}`;
+const WEBSOCKET_ADDRESS = USE_FORWARDER ? `wss://${DOMAIN}` : `ws://${DOMAIN}`; // Socket.IO uses the BASE_URL
 
 const ACTION = {
     PLAY_SONG: "PLAY_SONG",
@@ -42,7 +43,7 @@ function connect() {
     
     // The previous explicit options for `secure: true` are often still necessary
     // when tunneling through ngrok to ensure the WSS protocol is attempted.
-    ws = io(WEBSOCKET_ADDRESS, {
+    ws = io(WEBSOCKET_ADDRESS.replace("https://", "wss://"), {
         transports: ['websocket'],
         secure: true,
     });

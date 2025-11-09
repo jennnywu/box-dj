@@ -3,6 +3,7 @@
 Encoder Reader Module
 Handles I2C communication with ESP32 and velocity smoothing
 Includes predictive velocity tracking for low-resolution encoders
+Also handles button input and potentiometer data
 """
 
 import smbus2
@@ -11,7 +12,8 @@ import time
 from collections import deque
 from config import (
     DATA_PACKET_SIZE, VELOCITY_WINDOW_SIZE, DEBUG_PRINT_I2C,
-    ENCODER_PPR, VELOCITY_PREDICTION, VELOCITY_TIMEOUT_MS
+    ENCODER_PPR, VELOCITY_PREDICTION, VELOCITY_TIMEOUT_MS,
+    BUTTON_NAMES, POTENTIOMETER_MIN, POTENTIOMETER_MAX
 )
 
 class PredictiveVelocityTracker:
@@ -161,25 +163,34 @@ class EncoderReader:
 
     def read_raw_data(self):
         """
-        Read raw encoder data from ESP32 via I2C
+        Read raw data from ESP32 via I2C
 
         Returns:
-            tuple: (position, velocity_raw, timestamp) or None on error
+            tuple: (position, velocity_raw, timestamp, button_flags, potentiometer) or None on error
         """
         try:
-            # Read 12 bytes from ESP32 slave
+            # Read 15 bytes from ESP32 slave
             data = self.bus.read_i2c_block_data(self.i2c_address, 0, DATA_PACKET_SIZE)
 
             # Unpack data (little-endian format)
+            # Position (4 bytes, signed int32)
             position = struct.unpack('<i', bytes(data[0:4]))[0]
-            velocity_fixed = struct.unpack('<i', bytes(data[4:8]))[0]
-            timestamp = struct.unpack('<I', bytes(data[8:12]))[0]
 
-            # Convert velocity from fixed-point to float (ESP32 sends * 100)
+            # Velocity (4 bytes, signed int32, fixed-point * 100)
+            velocity_fixed = struct.unpack('<i', bytes(data[4:8]))[0]
             velocity_raw = velocity_fixed / 100.0
 
+            # Timestamp (4 bytes, unsigned int32)
+            timestamp = struct.unpack('<I', bytes(data[8:12]))[0]
+
+            # Button flags (1 byte, unsigned int8)
+            button_flags = data[12]
+
+            # Potentiometer (2 bytes, unsigned int16)
+            potentiometer = struct.unpack('<H', bytes(data[13:15]))[0]
+
             self.total_reads += 1
-            return position, velocity_raw, timestamp
+            return position, velocity_raw, timestamp, button_flags, potentiometer
 
         except Exception as e:
             self.read_errors += 1
@@ -189,7 +200,7 @@ class EncoderReader:
 
     def read(self):
         """
-        Read encoder data and calculate smoothed or predicted velocity
+        Read all data from ESP32 and calculate smoothed or predicted velocity
 
         Returns:
             dict: {
@@ -197,6 +208,11 @@ class EncoderReader:
                 'velocity': float (smoothed or predicted, counts/s),
                 'velocity_raw': float (from ESP32),
                 'timestamp': int (ms),
+                'button_flags': int (byte with button states),
+                'buttons': dict (button_name -> bool),
+                'buttons_pressed': list (names of pressed buttons),
+                'potentiometer': int (0-4095),
+                'potentiometer_normalized': float (0.0-1.0),
                 'predicted': bool (True if using prediction)
             } or None on error
         """
@@ -205,7 +221,7 @@ class EncoderReader:
         if raw_data is None:
             return None
 
-        position, velocity_raw, timestamp = raw_data
+        position, velocity_raw, timestamp, button_flags, potentiometer = raw_data
 
         # Calculate velocity based on mode
         if self.use_predictive:
@@ -218,11 +234,28 @@ class EncoderReader:
         self.last_position = position
         self.last_timestamp = timestamp
 
+        # Decode button flags
+        buttons = {}
+        buttons_pressed = []
+        for i, name in enumerate(BUTTON_NAMES):
+            is_pressed = bool(button_flags & (1 << i))
+            buttons[name] = is_pressed
+            if is_pressed:
+                buttons_pressed.append(name)
+
+        # Normalize potentiometer value (0-4095 -> 0.0-1.0)
+        pot_normalized = potentiometer / float(POTENTIOMETER_MAX)
+
         return {
             'position': position,
             'velocity': velocity,
             'velocity_raw': velocity_raw,
             'timestamp': timestamp,
+            'button_flags': button_flags,
+            'buttons': buttons,
+            'buttons_pressed': buttons_pressed,
+            'potentiometer': potentiometer,
+            'potentiometer_normalized': pot_normalized,
             'predicted': predicted
         }
 
@@ -241,13 +274,13 @@ class EncoderReader:
 
 
 def test_encoder_reader():
-    """Test function to verify encoder reading"""
+    """Test function to verify encoder reading and input data"""
     import time
     from config import I2C_BUS, ESP32_DECK1_ADDR
 
-    print("Testing Encoder Reader")
+    print("Testing ESP32 Data Reader (Encoder + Inputs)")
     print(f"Reading from ESP32 at address 0x{ESP32_DECK1_ADDR:02X}")
-    print("-" * 70)
+    print("=" * 80)
 
     bus = smbus2.SMBus(I2C_BUS)
     encoder = EncoderReader(bus, ESP32_DECK1_ADDR)
@@ -257,10 +290,15 @@ def test_encoder_reader():
             data = encoder.read()
 
             if data:
-                print(f"Pos: {data['position']:6d} | "
-                      f"Vel (smooth): {data['velocity']:7.1f} | "
-                      f"Vel (raw): {data['velocity_raw']:6.1f} | "
-                      f"Time: {data['timestamp']:8d} ms")
+                # Format button press list
+                buttons_str = ", ".join(data['buttons_pressed']) if data['buttons_pressed'] else "None"
+
+                # Print all data
+                print(f"[{data['timestamp']:8d} ms] "
+                      f"Pos: {data['position']:6d} | "
+                      f"Vel: {data['velocity']:7.1f} | "
+                      f"Pot: {data['potentiometer']:4d} ({data['potentiometer_normalized']:.2f}) | "
+                      f"Buttons: {buttons_str}")
 
             time.sleep(0.02)  # 50Hz
 

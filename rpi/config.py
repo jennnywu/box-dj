@@ -15,8 +15,24 @@ DUAL_DECK_MODE = False  # Set to True for two-deck mixing, False for single deck
 I2C_BUS = 1                    # RPi5 I2C bus (usually 1)
 ESP32_DECK1_ADDR = 0x42        # ESP32 slave address for Deck 1
 ESP32_DECK2_ADDR = 0x43        # ESP32 slave address for Deck 2 (if using two)
-DATA_PACKET_SIZE = 12          # 12 bytes: position(4) + velocity(4) + timestamp(4)
+DATA_PACKET_SIZE = 15          # 15 bytes: position(4) + velocity(4) + timestamp(4) + button_flags(1) + potentiometer(2)
 I2C_POLL_RATE_MS = 20          # Poll I2C every 20ms (50Hz)
+
+# ==================== BUTTON CONFIGURATION ====================
+# Button bit indices (matching ESP32 inputs.h)
+BUTTON_SFX_1 = 0
+BUTTON_SFX_2 = 1
+BUTTON_SFX_3 = 2
+BUTTON_SFX_4 = 3
+BUTTON_SONG_1 = 4
+BUTTON_SONG_2 = 5
+
+BUTTON_NAMES = ["SFX_1", "SFX_2", "SFX_3", "SFX_4", "SONG_1", "SONG_2"]
+
+# ==================== POTENTIOMETER CONFIGURATION ====================
+POTENTIOMETER_MIN = 0          # Minimum ADC value (12-bit)
+POTENTIOMETER_MAX = 4095       # Maximum ADC value (12-bit)
+POTENTIOMETER_DEADZONE = 50    # Deadzone near edges to avoid noise
 
 # ==================== ENCODER SETTINGS ====================
 VELOCITY_WINDOW_SIZE = 10      # Longer window for low-resolution encoder (24 PPR)

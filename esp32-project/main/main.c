@@ -27,6 +27,7 @@
 #include "comm.h"
 #include "lcd.h"
 #include "utils.h"
+#include "inputs.h"
 
 /*------------------------------------------------------------------------------------------------*/
 /* MACROS                                                                                         */
@@ -111,6 +112,12 @@ esp_err_t initialize_main(void)
     ret = comm_init();
     if (ret != ESP_OK) {
         LOG_ERROR(TAG, "Failed to initialize communication module: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = inputs_init();
+    if (ret != ESP_OK) {
+        LOG_ERROR(TAG, "Failed to initialize inputs: %s", esp_err_to_name(ret));
         return ret;
     }
 

@@ -47,6 +47,10 @@
 #define I2C_SLAVE_TX_BUF_LEN    128             // I2C slave tx buffer size
 #define I2C_SLAVE_RX_BUF_LEN    128             // I2C slave rx buffer size
 
+// I2C Data Packet Size
+// Position(4) + Velocity(4) + Timestamp(4) + ButtonFlags(1) + Potentiometer(2) = 15 bytes
+#define I2C_DATA_PACKET_SIZE    15
+
 /*------------------------------------------------------------------------------------------------*/
 // FUNCTION DECLARATIONS                                                                          */
 /*------------------------------------------------------------------------------------------------*/

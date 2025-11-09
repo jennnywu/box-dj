@@ -25,16 +25,18 @@
 #include "comm.h"
 #include "sensors.h"
 #include "utils.h"
+#include "inputs.h"
 
 /*------------------------------------------------------------------------------------------------*/
 /* MACROS                                                                                         */
 /*------------------------------------------------------------------------------------------------*/
 
-// I2C data packet structure (12 bytes total)
+// I2C data packet structure (15 bytes total)
 #define I2C_DATA_POSITION_OFFSET    0   // Offset for position (4 bytes)
 #define I2C_DATA_VELOCITY_OFFSET    4   // Offset for velocity (4 bytes)
 #define I2C_DATA_TIMESTAMP_OFFSET   8   // Offset for timestamp (4 bytes)
-#define I2C_DATA_PACKET_SIZE        12  // Total packet size
+#define I2C_DATA_BUTTON_OFFSET      12  // Offset for button flags (1 byte)
+#define I2C_DATA_POT_OFFSET         13  // Offset for potentiometer (2 bytes)
 
 /*------------------------------------------------------------------------------------------------*/
 /* GLOBAL VARIABLES                                                                               */
@@ -42,6 +44,8 @@
 
 static const char *TAG = "COMM";
 static uint8_t i2c_data_buffer[I2C_DATA_PACKET_SIZE];
+
+static input_data_t last_input_data = {0};
 
 /*------------------------------------------------------------------------------------------------*/
 /* FUNCTION PROTOTYPES                                                                            */
@@ -85,8 +89,8 @@ esp_err_t comm_init(void)
     // Initialize data buffer to zero
     memset(i2c_data_buffer, 0, I2C_DATA_PACKET_SIZE);
 
-    LOG_INFO(TAG, "I2C slave initialized on SDA=%d, SCL=%d, Address=0x%02X",
-             I2C_SLAVE_SDA_IO, I2C_SLAVE_SCL_IO, I2C_SLAVE_ADDR);
+    LOG_INFO(TAG, "I2C slave initialized on SDA=%d, SCL=%d, Address=0x%02X, PacketSize=%d bytes",
+             I2C_SLAVE_SDA_IO, I2C_SLAVE_SCL_IO, I2C_SLAVE_ADDR, I2C_DATA_PACKET_SIZE);
 
     return ESP_OK;
 }
@@ -97,6 +101,9 @@ esp_err_t comm_update_encoder_data(void)
     int32_t position = encoder_get_position();
     float velocity = encoder_get_velocity(200);  // Assuming 200ms sample period
     uint32_t timestamp = (uint32_t)(esp_timer_get_time() / 1000);  // Convert to ms
+
+    // Get input data (buttons + potentiometer)
+    inputs_get_data(&last_input_data);
 
     // Pack data into buffer (little-endian format)
     // Position (4 bytes)
@@ -118,6 +125,13 @@ esp_err_t comm_update_encoder_data(void)
     i2c_data_buffer[I2C_DATA_TIMESTAMP_OFFSET + 2] = (timestamp >> 16) & 0xFF;
     i2c_data_buffer[I2C_DATA_TIMESTAMP_OFFSET + 3] = (timestamp >> 24) & 0xFF;
 
+    // Button flags (1 byte)
+    i2c_data_buffer[I2C_DATA_BUTTON_OFFSET] = last_input_data.button_flags;
+
+    // Potentiometer value (2 bytes, little-endian)
+    i2c_data_buffer[I2C_DATA_POT_OFFSET + 0] = (last_input_data.potentiometer >> 0) & 0xFF;
+    i2c_data_buffer[I2C_DATA_POT_OFFSET + 1] = (last_input_data.potentiometer >> 8) & 0xFF;
+
     // Write data to I2C slave buffer (ready for master to read)
     int written = i2c_slave_write_buffer(I2C_SLAVE_NUM, i2c_data_buffer,
                                          I2C_DATA_PACKET_SIZE, 0);
@@ -125,6 +139,9 @@ esp_err_t comm_update_encoder_data(void)
         LOG_WARN(TAG, "Failed to write to I2C buffer");
         return ESP_FAIL;
     }
+
+    // Clear button flags after successful transmission
+    inputs_clear_button_flags();
 
     return ESP_OK;
 }

@@ -54,15 +54,24 @@ class DJDeck:
         
         self.encoder_read_history = deque(maxlen=100)
         
+        # MODIFIED: Add keys to access the correct part of the I2C data packet
+        if self.deck_id == 1:
+            self.position_key = 'enc1_position'
+            self.velocity_key = 'enc1_velocity'
+        else:
+            self.position_key = 'enc2_position'
+            self.velocity_key = 'enc2_velocity'
+
     def set_control_mode(self, mode):
         """Switch between control modes"""
         if mode in [CONTROL_MODE_VELOCITY, CONTROL_MODE_POSITION, CONTROL_MODE_TURNTABLE]:
             self.control_mode = mode
             print(f"Deck {self.deck_id}: Control mode set to {mode}")
 
-    def update_from_encoder(self):
-        """Read encoder and update playback rate/volume"""
-        data = self.encoder.read()
+    # MODIFIED: Renamed from update_from_encoder to process_encoder_data
+    def process_encoder_data(self, data):
+        """Process encoder data (passed from mixer) and update playback"""
+        # REMOVED: data = self.encoder.read() - Data is now passed in
 
         if data is None:
             return
@@ -74,19 +83,27 @@ class DJDeck:
         self._update_rate()
 
     def _update_state_turntable(self):
-        prev_velocities = [entry['enc1_velocity'] for entry in self.encoder_read_history]
+        # MODIFIED: Use self.velocity_key
+        prev_velocities = [entry[self.velocity_key] for entry in self.encoder_read_history]
 
         if not self.encoder_read_history:
             return
+            
         avg_recent_velocity = sum(prev_velocities) / len(prev_velocities)
-        print("AVG RECENT VEL", avg_recent_velocity)
+        
+        # DEBUG: Add deck_id for clarity
+        if DEBUG_PRINT_RATE:
+            print(f"AVG RECENT VEL Deck {self.deck_id}: {avg_recent_velocity:.2f}")
+
         if NORMAL_SPEED_MIN < avg_recent_velocity < NORMAL_SPEED_MAX:
             self.state = TurntableState.NORMAL_SPEED
         else:
             self.state = TurntableState.MODULATING_SPEED
         
-        print("STATE:", self.state)
-        print()
+        # DEBUG: Add deck_id for clarity
+        if DEBUG_PRINT_RATE:
+            print(f"Deck {self.deck_id} STATE:", self.state)
+            print()
         
     
     def _update_rate(self):
@@ -95,20 +112,27 @@ class DJDeck:
                 # Not sure if even to go with this
                 print("Still calibrating...")
             case TurntableState.NORMAL_SPEED:
-                print("At normal speed, reset rate to 1.0x")
+                if DEBUG_PRINT_RATE:
+                    print(f"Deck {self.deck_id}: At normal speed, reset rate to 1.0x")
                 self.current_rate = 1.0
+                self.rate_element.set_property("rate", 1.0) # Explicitly reset rate
             case TurntableState.MODULATING_SPEED:
-                print("Modulating speed...")
+                if DEBUG_PRINT_RATE:
+                    print(f"Deck {self.deck_id}: Modulating speed...")
                 """Update playback rate based on encoder velocity (scratching)"""
-                velocity = self.encoder_read_history[-1]['enc1_velocity']
+                
+                # MODIFIED: Use self.velocity_key
+                velocity = self.encoder_read_history[-1][self.velocity_key]
                 rate_change = velocity / VELOCITY_SCALE
                 new_rate = 1.0 + rate_change
 
                 # Clamp to allowed range
-                new_rate = max(max(MIN_PLAYBACK_RATE, new_rate), min(MAX_PLAYBACK_RATE, new_rate))
+                # MODIFIED: Clamping logic was incorrect, simplified
+                new_rate = max(MIN_PLAYBACK_RATE, min(MAX_PLAYBACK_RATE, new_rate))
 
                 if abs(new_rate - self.current_rate) > 0.01:  # Only update if significant change
                     self.current_rate = new_rate
+                    # Ensure rate doesn't go to 0 or negative if MIN_PLAYBACK_RATE is low
                     self.rate_element.set_property("rate", max(0.01, self.current_rate))
 
                     if DEBUG_PRINT_RATE:
@@ -171,6 +195,8 @@ class DJMixer:
         decode1 = Gst.ElementFactory.make("decodebin", "decode1")
         convert1 = Gst.ElementFactory.make("audioconvert", "convert1")
         rate1 = Gst.ElementFactory.make("pitch", "rate1")
+        # Set pitch element to preserve pitch (soundstretch)
+        rate1.set_property("tempo", 1.0) # We control tempo via the 'rate' property
 
         # === Output Elements ===
         output_convert = Gst.ElementFactory.make("audioconvert", "output_convert")
@@ -198,6 +224,7 @@ class DJMixer:
             decode2 = Gst.ElementFactory.make("decodebin", "decode2")
             convert2 = Gst.ElementFactory.make("audioconvert", "convert2")
             rate2 = Gst.ElementFactory.make("pitch", "rate2")
+            rate2.set_property("tempo", 1.0) # We control tempo via the 'rate' property
             mixer = Gst.ElementFactory.make("audiomixer", "mixer")
 
             if not all([src2, decode2, convert2, rate2, mixer]):
@@ -284,7 +311,7 @@ class DJMixer:
             else:
                 # Single ESP32 controls both decks (same modulation)
                 encoder1 = EncoderReader(self.i2c_bus, ESP32_DECK1_ADDR, EncoderSmoother())
-                encoder2 = encoder1  # Both decks use same encoder
+                encoder2 = encoder1  # Both decks use same encoder object
                 print(f"Single encoder mode: Both decks@0x{ESP32_DECK1_ADDR:02X}")
 
             self.deck1 = DJDeck(1, encoder1, self._rate1, self._sink_pad_1, DECK1_CONTROL_MODE, self.pipeline)
@@ -296,17 +323,27 @@ class DJMixer:
             self.deck1 = DJDeck(1, encoder1, self._rate1, None, DECK1_CONTROL_MODE, self.pipeline)
             self.deck2 = None
 
+    # MODIFIED: Refactored update loop for efficiency
     def _on_i2c_update(self):
         """Called periodically to read encoders and update playback"""
         try:
-            self.deck1.update_from_encoder()
+            # Read data for Deck 1
+            # This reads data for BOTH encoders if use_dual_encoders=False
+            data1 = self.deck1.encoder.read()
+            self.deck1.process_encoder_data(data1)
             
             if self.deck2 is not None:
                 if self.use_dual_encoders:
-                    self.deck2.update_from_encoder()
+                    # Dual encoder mode: Read from the second I2C device
+                    data2 = self.deck2.encoder.read()
+                    self.deck2.process_encoder_data(data2)
+                else:
+                    # Single encoder mode: Pass the *same data* to Deck 2
+                    # It will use its own keys ('enc2_velocity', etc.)
+                    self.deck2.process_encoder_data(data1)
 
         except Exception as e:
-            raise e
+            # raise e # Don't raise, just print and continue
             print(f"Error in I2C update: {e}")
 
         return True  # Keep timer running
@@ -380,7 +417,7 @@ def main():
             print(f"Set DUAL_DECK_MODE = False in config.py for single deck mode")
             sys.exit(1)
 
-    mixer = DJMixer(file_path1, file_path2, use_dual_encoders=False)
+    mixer = DJMixer(file_path1, file_path2, use_dual_encoders=False) 
     mixer.run()
 
 

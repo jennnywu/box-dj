@@ -28,6 +28,7 @@
 #include "lcd.h"
 #include "utils.h"
 #include "inputs.h"
+#include "leds.h"
 
 /*------------------------------------------------------------------------------------------------*/
 /* MACROS                                                                                         */
@@ -79,6 +80,18 @@ void i2c_comm_task(void *pvParameters);
 
 /**************************************************************************************************/
 /**
+ * @name
+ * @brief
+ *
+ *
+ * @param pvParameters
+ *
+ */
+/**************************************************************************************************/
+void led_task(void *pvParameters);
+
+/**************************************************************************************************/
+/**
  * @name start_motors
  * @brief Start the motors with a predefined speed and direction
  *
@@ -118,6 +131,12 @@ esp_err_t initialize_main(void)
     ret = inputs_init();
     if (ret != ESP_OK) {
         LOG_ERROR(TAG, "Failed to initialize inputs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = leds_init();
+    if (ret != ESP_OK) {
+        LOG_ERROR(TAG, "Failed to initialize LEDs: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -222,6 +241,18 @@ void i2c_comm_task(void *pvParameters)
     }
 }
 
+void led_task(void *pvParameters)
+{
+    LOG_INFO(TAG, "LED scroll task started on core %d", xPortGetCoreID());
+
+    const uint32_t scroll_period_ms = 200;  // Scroll every 200ms
+
+    while (1) {
+        leds_scroll();
+        vTaskDelay(pdMS_TO_TICKS(scroll_period_ms));
+    }
+}
+
 void app_main(void)
 {
     // Initialize all systems
@@ -263,19 +294,35 @@ void app_main(void)
         return;
     }
 
-    // Create encoder reading task - HIGHEST PRIORITY on Core 0
-    BaseType_t encoder_task_created = xTaskCreatePinnedToCore(
-        encoder_read_task,       // Task function
-        "encoder_read",          // Task name
-        4096,                    // Stack size (bytes)
+    // // Create encoder reading task - HIGHEST PRIORITY on Core 0
+    // BaseType_t encoder_task_created = xTaskCreatePinnedToCore(
+    //     encoder_read_task,       // Task function
+    //     "encoder_read",          // Task name
+    //     4096,                    // Stack size (bytes)
+    //     NULL,                    // Task parameters
+    //     10,                      // Priority (highest)
+    //     NULL,                    // Task handle
+    //     0                        // Core 0
+    // );
+
+    // if (encoder_task_created != pdPASS) {
+    //     LOG_ERROR(TAG, "Failed to create encoder reading task");
+    //     return;
+    // }
+
+    // Create LED scroll task - LOW PRIORITY on Core 0
+    BaseType_t led_task_created = xTaskCreatePinnedToCore(
+        led_task,                // Task function
+        "led_scroll",            // Task name
+        2048,                    // Stack size (bytes) - smaller since it's simple
         NULL,                    // Task parameters
-        10,                      // Priority (highest)
+        3,                       // Priority (low - visual effect)
         NULL,                    // Task handle
         0                        // Core 0
     );
 
-    if (encoder_task_created != pdPASS) {
-        LOG_ERROR(TAG, "Failed to create encoder reading task");
+    if (led_task_created != pdPASS) {
+        LOG_ERROR(TAG, "Failed to create LED scroll task");
         return;
     }
 
@@ -297,6 +344,6 @@ void app_main(void)
 
     LOG_INFO(TAG, "All tasks created successfully");
     LOG_INFO(TAG, "Task Configuration:");
-    LOG_INFO(TAG, "  Core 0: encoder_read (priority 10), motor_control (priority 5)");
+    LOG_INFO(TAG, "  Core 0: encoder_read (priority 10), led_scroll (priority 3)");
     LOG_INFO(TAG, "  Core 1: i2c_comm (priority 10)");
 }

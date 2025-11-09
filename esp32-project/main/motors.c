@@ -119,7 +119,7 @@ static esp_err_t motor_gpio_init(void)
 
     // Direction pins for both motors
     const gpio_num_t direction_pins[] = {
-        MOTOR_A_IN1, MOTOR_A_IN2,
+        // MOTOR_A_IN1, MOTOR_A_IN2,
         MOTOR_B_IN3, MOTOR_B_IN4
     };
     int num_pins = sizeof(direction_pins) / sizeof(direction_pins[0]);
@@ -169,20 +169,20 @@ static esp_err_t motor_pwm_init(void)
         return ret;
     }
 
-    // Configure Motor A PWM channel
-    ledc_channel_config_t motor_a_channel = {
-        .gpio_num = MOTOR_A_EN,
-        .speed_mode = PWM_MODE,
-        .channel = MOTOR_A_CHANNEL,
-        .timer_sel = PWM_TIMER,
-        .duty = 0,
-        .hpoint = 0
-    };
-    ret = ledc_channel_config(&motor_a_channel);
-    if (ret != ESP_OK) {
-        LOG_ERROR(TAG, "Failed to configure Motor A PWM: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    // // Configure Motor A PWM channel
+    // ledc_channel_config_t motor_a_channel = {
+    //     .gpio_num = MOTOR_A_EN,
+    //     .speed_mode = PWM_MODE,
+    //     .channel = MOTOR_A_CHANNEL,
+    //     .timer_sel = PWM_TIMER,
+    //     .duty = 0,
+    //     .hpoint = 0
+    // };
+    // ret = ledc_channel_config(&motor_a_channel);
+    // if (ret != ESP_OK) {
+    //     LOG_ERROR(TAG, "Failed to configure Motor A PWM: %s", esp_err_to_name(ret));
+    //     return ret;
+    // }
 
     // Configure Motor B PWM channel
     ledc_channel_config_t motor_b_channel = {
@@ -209,8 +209,8 @@ static void set_motor_direction(motor_direction_t direction)
         case MOTOR_FORWARD:
             LOG_DEBUG(TAG, "Setting direction: FORWARD (IN1=0, IN2=1, IN3=0, IN4=1)");
             // Motor A forward
-            gpio_set_level(MOTOR_A_IN1, 0);
-            gpio_set_level(MOTOR_A_IN2, 1);
+            // gpio_set_level(MOTOR_A_IN1, 0);
+            // gpio_set_level(MOTOR_A_IN2, 1);
             // Motor B forward
             gpio_set_level(MOTOR_B_IN3, 0);
             gpio_set_level(MOTOR_B_IN4, 1);
@@ -219,8 +219,8 @@ static void set_motor_direction(motor_direction_t direction)
         case MOTOR_BACKWARD:
             LOG_DEBUG(TAG, "Setting direction: BACKWARD (IN1=1, IN2=0, IN3=1, IN4=0)");
             // Motor A backward
-            gpio_set_level(MOTOR_A_IN1, 1);
-            gpio_set_level(MOTOR_A_IN2, 0);
+            // gpio_set_level(MOTOR_A_IN1, 1);
+            // gpio_set_level(MOTOR_A_IN2, 0);
             // Motor B backward
             gpio_set_level(MOTOR_B_IN3, 1);
             gpio_set_level(MOTOR_B_IN4, 0);
@@ -229,8 +229,8 @@ static void set_motor_direction(motor_direction_t direction)
         case MOTOR_STOP:
             LOG_DEBUG(TAG, "Setting direction: STOP (all pins LOW)");
             // Stop both motors
-            gpio_set_level(MOTOR_A_IN1, 0);
-            gpio_set_level(MOTOR_A_IN2, 0);
+            // gpio_set_level(MOTOR_A_IN1, 0);
+            // gpio_set_level(MOTOR_A_IN2, 0);
             gpio_set_level(MOTOR_B_IN3, 0);
             gpio_set_level(MOTOR_B_IN4, 0);
             break;
@@ -242,8 +242,8 @@ static void set_motor_pwm(uint8_t speed)
     LOG_DEBUG(TAG, "Setting PWM speed: %d (on EN pins %d, %d)", speed, MOTOR_A_EN, MOTOR_B_EN);
 
     // Set Motor A speed
-    ledc_set_duty(PWM_MODE, MOTOR_A_CHANNEL, speed);
-    ledc_update_duty(PWM_MODE, MOTOR_A_CHANNEL);
+    // ledc_set_duty(PWM_MODE, MOTOR_A_CHANNEL, speed);
+    // ledc_update_duty(PWM_MODE, MOTOR_A_CHANNEL);
 
     // Set Motor B speed
     ledc_set_duty(PWM_MODE, MOTOR_B_CHANNEL, speed);

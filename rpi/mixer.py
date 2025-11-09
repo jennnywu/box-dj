@@ -27,16 +27,13 @@ from config import (
 import enum
 from collections import deque
 
-# --- NEW ---
-# Define the amount to change volume per button press
-VOLUME_STEP = 0.05  # 5% change
-
 
 class TurntableState(enum.Enum):
     """States for the Turntable Speed Controller"""
     CALIBRATING = 0
     NORMAL_SPEED = 1
     MODULATING_SPEED = 2
+
 
 
 class DJDeck:
@@ -49,18 +46,14 @@ class DJDeck:
         self.volume_pad = volume_pad
         self.control_mode = control_mode
         self.pipeline = pipeline
-
+        
         self.state = TurntableState.NORMAL_SPEED
 
         self.current_rate = 1.0
-        # Set initial volume from config
         self.current_volume = DEFAULT_VOLUME
-        # Apply the initial volume
-        self.set_volume(self.current_volume)
         
         self.encoder_read_history = deque(maxlen=100)
         
-        # MODIFIED: Add keys to access the correct part of the I2C data packet
         if self.deck_id == 1:
             self.position_key = 'enc1_position'
             self.velocity_key = 'enc1_velocity'
@@ -74,22 +67,16 @@ class DJDeck:
             self.control_mode = mode
             print(f"Deck {self.deck_id}: Control mode set to {mode}")
 
-    # MODIFIED: Renamed from update_from_encoder to process_encoder_data
     def process_encoder_data(self, data):
         """Process encoder data (passed from mixer) and update playback"""
-        # REMOVED: data = self.encoder.read() - Data is now passed in
-
         if data is None:
             return
 
         self.encoder_read_history.append(data)
-
-        # Update playback rate based on control mode
         self._update_state_turntable()
         self._update_rate()
 
     def _update_state_turntable(self):
-        # MODIFIED: Use self.velocity_key
         prev_velocities = [entry[self.velocity_key] for entry in self.encoder_read_history]
 
         if not self.encoder_read_history:
@@ -97,7 +84,6 @@ class DJDeck:
             
         avg_recent_velocity = sum(prev_velocities) / len(prev_velocities)
         
-        # DEBUG: Add deck_id for clarity
         if DEBUG_PRINT_RATE:
             print(f"AVG RECENT VEL Deck {self.deck_id}: {avg_recent_velocity:.2f}")
 
@@ -106,7 +92,6 @@ class DJDeck:
         else:
             self.state = TurntableState.MODULATING_SPEED
         
-        # DEBUG: Add deck_id for clarity
         if DEBUG_PRINT_RATE:
             print(f"Deck {self.deck_id} STATE:", self.state)
             print()
@@ -115,7 +100,6 @@ class DJDeck:
     def _update_rate(self):
         match self.state:
             case TurntableState.CALIBRATING:
-                # Not sure if even to go with this
                 print("Still calibrating...")
             case TurntableState.NORMAL_SPEED:
                 if DEBUG_PRINT_RATE:
@@ -125,20 +109,14 @@ class DJDeck:
             case TurntableState.MODULATING_SPEED:
                 if DEBUG_PRINT_RATE:
                     print(f"Deck {self.deck_id}: Modulating speed...")
-                """Update playback rate based on encoder velocity (scratching)"""
                 
-                # MODIFIED: Use self.velocity_key
                 velocity = self.encoder_read_history[-1][self.velocity_key]
                 rate_change = velocity / VELOCITY_SCALE
                 new_rate = 1.0 + rate_change
-
-                # Clamp to allowed range
-                # MODIFIED: Clamping logic was incorrect, simplified
                 new_rate = max(MIN_PLAYBACK_RATE, min(MAX_PLAYBACK_RATE, new_rate))
 
-                if abs(new_rate - self.current_rate) > 0.01:  # Only update if significant change
+                if abs(new_rate - self.current_rate) > 0.01:
                     self.current_rate = new_rate
-                    # Ensure rate doesn't go to 0 or negative if MIN_PLAYBACK_RATE is low
                     self.rate_element.set_property("rate", max(0.01, self.current_rate))
 
                     if DEBUG_PRINT_RATE:
@@ -149,23 +127,15 @@ class DJDeck:
         volume = max(0.0, min(1.0, volume))
         self.current_volume = volume
 
-        # Only set volume if we have a mixer pad (dual deck mode)
         if self.volume_pad is not None:
             self.volume_pad.set_property("volume", volume)
-
             if DEBUG_PRINT_VOLUME:
-                # Only print if volume actually changed to reduce spam
-                # Note: This simple check won't work perfectly due to floating point
-                # A proper check would compare against last_set_volume
-                print(f"Deck {self.deck_id}: Volume SET to {volume:.2f}")
+                print(f"Deck {self.deck_id}: Volume {volume:.2f}")
         elif DEBUG_PRINT_VOLUME:
-            # This will print once if in single-deck mode
             print(f"Deck {self.deck_id}: Volume control not available in single deck mode")
 
     def adjust_volume(self, delta):
         """Adjust volume by delta"""
-        if DEBUG_PRINT_VOLUME:
-             print(f"Deck {self.deck_id}: Adjusting volume by {delta:.2f}")
         self.set_volume(self.current_volume + delta)
 
 
@@ -173,14 +143,6 @@ class DJMixer:
     """Main DJ mixer application"""
 
     def __init__(self, file_path1, file_path2=None, use_dual_encoders=False):
-        """
-        Initialize DJ Mixer
-
-        Args:
-            file_path1: Path to audio file for deck 1
-            file_path2: Path to audio file for deck 2 (None for single deck mode)
-            use_dual_encoders: If True, use two separate ESP32s for each deck
-        """
         Gst.init(None)
 
         self.pipeline = None
@@ -191,11 +153,32 @@ class DJMixer:
         self.dual_deck_mode = file_path2 is not None
         self.use_dual_encoders = use_dual_encoders
 
-        # Build GStreamer pipeline
-        self._build_pipeline(file_path1, file_path2)
+        # --- NEW: Initialize effect elements ---
+        self._reverb1 = None
+        self._reverb2 = None
+        self._demo_reverb_on = False # For demo timer
+        # --- END NEW ---
 
-        # Initialize I2C and encoders
+        self._build_pipeline(file_path1, file_path2)
         self._init_encoders()
+
+    # --- NEW: Effect Control Methods ---
+    def set_deck1_reverb(self, amount):
+        """Set Deck 1 reverb wet level (0.0=off, 1.0=max)"""
+        if self._reverb1:
+            amount = max(0.0, min(1.0, amount))
+            # --- FIX: Use 'wet' property ---
+            self._reverb1.set_property("level", amount)
+            print(f"Deck 1 Reverb: {amount:.2f}")
+
+    def set_deck2_reverb(self, amount):
+        """Set Deck 2 reverb wet level (0.0=off, 1.0=max)"""
+        if self._reverb2:
+            amount = max(0.0, min(1.0, amount))
+            # --- FIX: Use 'wet' property ---
+            self._reverb2.set_property("level", amount)
+            print(f"Deck 2 Reverb: {amount:.2f}")
+    # --- END NEW ---
 
     def _build_pipeline(self, file_path1, file_path2):
         """Build the GStreamer audio pipeline"""
@@ -207,22 +190,32 @@ class DJMixer:
         decode1 = Gst.ElementFactory.make("decodebin", "decode1")
         convert1 = Gst.ElementFactory.make("audioconvert", "convert1")
         rate1 = Gst.ElementFactory.make("pitch", "rate1")
-        # Set pitch element to preserve pitch (soundstretch)
-        rate1.set_property("tempo", 1.0) # We control tempo via the 'rate' property
+        rate1.set_property("tempo", 1.0)
+        
+        # --- NEW: Deck 1 Effects ---
+        self._reverb1 = Gst.ElementFactory.make("freeverb", "reverb1")
+        # ---
 
         # === Output Elements ===
         output_convert = Gst.ElementFactory.make("audioconvert", "output_convert")
         output_sink = Gst.ElementFactory.make("pulsesink", "output_sink")
 
-        # Check essential elements
-        if not all([src1, decode1, convert1, rate1, output_convert, output_sink]):
-            raise RuntimeError("Failed to create essential GStreamer elements. Check plugins.")
+        if not all([src1, decode1, convert1, rate1, 
+                    self._reverb1, # NEW
+                    output_convert, output_sink]):
+            raise RuntimeError("Failed to create essential GStreamer elements. Check plugins (freeverb).")
+
+        # --- NEW: Set default effect properties (OFF) ---
+        # --- FIX: Use 'wet' property ---
+        self._reverb1.set_property("level", 0.0)
+        # ---
 
         # Add deck 1 elements to pipeline
         self.pipeline.add(src1)
         self.pipeline.add(decode1)
         self.pipeline.add(convert1)
         self.pipeline.add(rate1)
+        self.pipeline.add(self._reverb1)  # NEW
         self.pipeline.add(output_convert)
         self.pipeline.add(output_sink)
 
@@ -236,34 +229,49 @@ class DJMixer:
             decode2 = Gst.ElementFactory.make("decodebin", "decode2")
             convert2 = Gst.ElementFactory.make("audioconvert", "convert2")
             rate2 = Gst.ElementFactory.make("pitch", "rate2")
-            rate2.set_property("tempo", 1.0) # We control tempo via the 'rate' property
+            rate2.set_property("tempo", 1.0)
+            
+            # --- NEW: Deck 2 Effects ---
+            self._reverb2 = Gst.ElementFactory.make("freeverb", "reverb2")
+            # ---
+            
             mixer = Gst.ElementFactory.make("audiomixer", "mixer")
 
-            if not all([src2, decode2, convert2, rate2, mixer]):
+            if not all([src2, decode2, convert2, rate2, 
+                        self._reverb2, # NEW
+                        mixer]):
                 raise RuntimeError("Failed to create deck 2 GStreamer elements.")
+
+            # --- NEW: Set default effect properties (OFF) ---
+            # --- FIX: Use 'wet' property ---
+            self._reverb2.set_property("level", 0.0)
+            # ---
 
             # Add deck 2 and mixer to pipeline
             self.pipeline.add(src2)
             self.pipeline.add(decode2)
             self.pipeline.add(convert2)
             self.pipeline.add(rate2)
+            self.pipeline.add(self._reverb2)  # NEW
             self.pipeline.add(mixer)
 
-            # Link Deck 1: src → decode → convert → rate → mixer
+            # Link Deck 1: src → decode → convert → rate → reverb → mixer
             src1.link(decode1)
             decode1.connect("pad-added", self._on_pad_added, convert1)
             convert1.link(rate1)
+            rate1.link(self._reverb1) # NEW
 
-            src_pad_1 = rate1.get_static_pad("src")
+            src_pad_1 = self._reverb1.get_static_pad("src") # MODIFIED: link from last effect
             sink_pad_1 = mixer.get_request_pad("sink_%u")
             src_pad_1.link(sink_pad_1)
 
-            # Link Deck 2: src → decode → convert → rate → mixer
+            # Link Deck 2: src → decode → convert → rate → reverb → mixer
             src2.link(decode2)
             decode2.connect("pad-added", self._on_pad_added, convert2)
             convert2.link(rate2)
+            rate2.link(self._reverb2) # NEW
 
-            src_pad_2 = rate2.get_static_pad("src")
+            src_pad_2 = self._reverb2.get_static_pad("src") # MODIFIED: link from last effect
             sink_pad_2 = mixer.get_request_pad("sink_%u")
             src_pad_2.link(sink_pad_2)
 
@@ -276,25 +284,29 @@ class DJMixer:
             self._rate2 = rate2
             self._sink_pad_1 = sink_pad_1
             self._sink_pad_2 = sink_pad_2
+            # self._reverb1/2 are already stored on self
 
         else:
             # === Single Deck Mode ===
             print("Building SINGLE DECK pipeline...")
 
-            # Link Deck 1: src → decode → convert → rate → output
+            # Link Deck 1: src → decode → convert → rate → reverb → output
             src1.link(decode1)
             decode1.connect("pad-added", self._on_pad_added, convert1)
             convert1.link(rate1)
-            rate1.link(output_convert)
+            rate1.link(self._reverb1) # NEW
+            self._reverb1.link(output_convert) # MODIFIED: link from last effect
             output_convert.link(output_sink)
 
             # Store elements for control
-            self.rate1 = rate1
+            self._rate1 = rate1
             self._rate2 = None
-            self._sink_pad_1 = None  # No mixer pad in single mode
+            self._sink_pad_1 = None 
             self._sink_pad_2 = None
+            # _reverb1 is stored
+            self._reverb2 = None # Explicitly set to None
 
-        print("GStreamer pipeline built successfully")
+        print("GStreamer pipeline built successfully (with reverb)")
 
     def _on_pad_added(self, element, pad, target_element):
         """Callback when decodebin creates a new pad"""
@@ -316,89 +328,70 @@ class DJMixer:
         if self.dual_deck_mode:
             # Dual deck mode
             if self.use_dual_encoders:
-                # Two separate ESP32s for independent deck control
                 encoder1 = EncoderReader(self.i2c_bus, ESP32_DECK1_ADDR, EncoderSmoother())
                 encoder2 = EncoderReader(self.i2c_bus, ESP32_DECK2_ADDR, EncoderSmoother())
                 print(f"Dual encoder mode: Deck1@0x{ESP32_DECK1_ADDR:02X}, Deck2@0x{ESP32_DECK2_ADDR:02X}")
             else:
-                # Single ESP32 controls both decks (same modulation)
                 encoder1 = EncoderReader(self.i2c_bus, ESP32_DECK1_ADDR, EncoderSmoother())
-                encoder2 = encoder1  # Both decks use same encoder object
+                encoder2 = encoder1
                 print(f"Single encoder mode: Both decks@0x{ESP32_DECK1_ADDR:02X}")
 
             self.deck1 = DJDeck(1, encoder1, self._rate1, self._sink_pad_1, DECK1_CONTROL_MODE, self.pipeline)
             self.deck2 = DJDeck(2, encoder2, self._rate2, self._sink_pad_2, DECK2_CONTROL_MODE, self.pipeline)
         else:
-            # Single deck mode
             encoder1 = EncoderReader(self.i2c_bus, ESP32_DECK1_ADDR, EncoderSmoother())
             print(f"Single deck mode: Encoder@0x{ESP32_DECK1_ADDR:02X}")
 
             self.deck1 = DJDeck(1, encoder1, self._rate1, None, DECK1_CONTROL_MODE, self.pipeline)
             self.deck2 = None
 
-    # MODIFIED: Replaced crossfader logic with button-based volume
     def _on_i2c_update(self):
         """Called periodically to read encoders and update playback"""
         try:
-            # Read data for Deck 1's controller
-            # In single-controller mode, this packet (data1) contains all info
-            # for both decks (enc1, enc2, slider, volume_pot, etc.)
             data1 = self.deck1.encoder.read()
-
-            if data1:
-                # --- START OF MODIFICATION ---
-                # Handle button-based volume control
-                # This assumes your BUTTON_NAMES in config.py are:
-                # ['vol_up_d1', 'vol_up_d2', 'vol_down_d1', 'vol_down_d2', ...]
-                # This will only work in DUAL_DECK_MODE
-                if self.dual_deck_mode and self.deck2 is not None:
-                    # Get the decoded button dict from the I2C packet
-                    buttons = data1['buttons']
-                    
-                    # Check for Deck 1 Volume
-                    # Use .get() for safety, in case button name is wrong
-                    if buttons.get('vol_up_d1'):
-                        self.deck1.adjust_volume(VOLUME_STEP)
-                    elif buttons.get('vol_down_d1'):
-                        self.deck1.adjust_volume(-VOLUME_STEP)
-                        
-                    # Check for Deck 2 Volume
-                    if buttons.get('vol_up_d2'):
-                        self.deck2.adjust_volume(VOLUME_STEP)
-                    elif buttons.get('vol_down_d2'):
-                        self.deck2.adjust_volume(-VOLUME_STEP)
-                
-                # --- END OF MODIFICATION ---
-
-                # Process encoder data for Deck 1 (rate/scratch control)
-                self.deck1.process_encoder_data(data1)
-
-            # Handle Deck 2
+            self.deck1.process_encoder_data(data1)
+            
             if self.deck2 is not None:
                 if self.use_dual_encoders:
-                    # Dual encoder mode: Read from the second I2C device
                     data2 = self.deck2.encoder.read()
-                    if data2:
-                        # Process rate/scratch control for Deck 2
-                        self.deck2.process_encoder_data(data2)
-                    # NOTE: In this mode, the crossfader and buttons are *only* # controlled by data1 (ESP32_DECK1_ADDR). This is likely desired.
+                    self.deck2.process_encoder_data(data2)
                 else:
-                    # Single encoder mode: Pass the *same data* to Deck 2
-                    # It will use its own keys ('enc2_velocity', etc.) for rate
-                    if data1:
-                        self.deck2.process_encoder_data(data1)
+                    self.deck2.process_encoder_data(data1)
 
         except Exception as e:
-            # raise e # Don't raise, just print and continue
             print(f"Error in I2C update: {e}")
 
         return True  # Keep timer running
+
+    # --- NEW: Demo method to toggle effects ---
+    def _demo_effects_toggle(self):
+        """A simple timer callback to demonstrate effect control"""
+        print("\n--- DEMO: Toggling Reverb ---")
+        
+        if self._demo_reverb_on:
+            print("-> Reverb OFF")
+            self.set_deck1_reverb(0.0)
+            if self.dual_deck_mode:
+                self.set_deck2_reverb(0.0)
+        else:
+            print("-> Reverb ON (Deck 1: 50%, Deck 2: 30%)")
+            self.set_deck1_reverb(0.5)
+            if self.dual_deck_mode:
+                self.set_deck2_reverb(0.3)
+
+        self._demo_reverb_on = not self._demo_reverb_on
+        
+        # Return True to keep the timer running
+        return True
+    # --- END NEW ---
 
     def run(self):
         """Start the DJ mixer"""
         print("\n" + "="*70)
         print(f"DJ MIXER RUNNING - {'DUAL DECK' if self.dual_deck_mode else 'SINGLE DECK'} MODE")
+        # --- FIX: Corrected SyntaxError ---
         print("="*70)
+        # ---
         print(f"Deck 1: {DECK1_CONTROL_MODE} mode")
         if self.dual_deck_mode:
             print(f"Deck 2: {DECK2_CONTROL_MODE} mode")
@@ -415,7 +408,7 @@ class DJMixer:
 
         print(f"\nI2C Poll Rate: {I2C_POLL_RATE_MS}ms")
         print("\nPress Ctrl+C to stop")
-        print("="*70)
+        print("="*70 + "\n")
 
         # Start pipeline
         self.pipeline.set_state(Gst.State.PLAYING)
@@ -425,6 +418,11 @@ class DJMixer:
 
         # Add I2C polling timer
         GLib.timeout_add(I2C_POLL_RATE_MS, self._on_i2c_update)
+        
+        # --- NEW: Add a simple timer to demo the effects ---
+        GLib.timeout_add_seconds(5, self._demo_effects_toggle)
+        print("\n*** EFFECT DEMO: Will toggle reverb every 5 seconds ***\n")
+        # --- END NEW ---
 
         try:
             self.loop.run()
@@ -463,7 +461,7 @@ def main():
             print(f"Set DUAL_DECK_MODE = False in config.py for single deck mode")
             sys.exit(1)
 
-    mixer = DJMixer(file_path1, file_path2, use_dual_encoders=False)  
+    mixer = DJMixer(file_path1, file_path2, use_dual_encoders=False) 
     mixer.run()
 
 

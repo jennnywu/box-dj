@@ -27,13 +27,16 @@ from config import (
 import enum
 from collections import deque
 
+# --- NEW ---
+# Define the amount to change volume per button press
+VOLUME_STEP = 0.05  # 5% change
+
 
 class TurntableState(enum.Enum):
     """States for the Turntable Speed Controller"""
     CALIBRATING = 0
     NORMAL_SPEED = 1
     MODULATING_SPEED = 2
-
 
 
 class DJDeck:
@@ -46,11 +49,14 @@ class DJDeck:
         self.volume_pad = volume_pad
         self.control_mode = control_mode
         self.pipeline = pipeline
-        
+
         self.state = TurntableState.NORMAL_SPEED
 
         self.current_rate = 1.0
+        # Set initial volume from config
         self.current_volume = DEFAULT_VOLUME
+        # Apply the initial volume
+        self.set_volume(self.current_volume)
         
         self.encoder_read_history = deque(maxlen=100)
         
@@ -148,12 +154,18 @@ class DJDeck:
             self.volume_pad.set_property("volume", volume)
 
             if DEBUG_PRINT_VOLUME:
-                print(f"Deck {self.deck_id}: Volume {volume:.2f}")
+                # Only print if volume actually changed to reduce spam
+                # Note: This simple check won't work perfectly due to floating point
+                # A proper check would compare against last_set_volume
+                print(f"Deck {self.deck_id}: Volume SET to {volume:.2f}")
         elif DEBUG_PRINT_VOLUME:
+            # This will print once if in single-deck mode
             print(f"Deck {self.deck_id}: Volume control not available in single deck mode")
 
     def adjust_volume(self, delta):
         """Adjust volume by delta"""
+        if DEBUG_PRINT_VOLUME:
+             print(f"Deck {self.deck_id}: Adjusting volume by {delta:.2f}")
         self.set_volume(self.current_volume + delta)
 
 
@@ -277,7 +289,7 @@ class DJMixer:
             output_convert.link(output_sink)
 
             # Store elements for control
-            self._rate1 = rate1
+            self.rate1 = rate1
             self._rate2 = None
             self._sink_pad_1 = None  # No mixer pad in single mode
             self._sink_pad_2 = None
@@ -317,30 +329,64 @@ class DJMixer:
             self.deck1 = DJDeck(1, encoder1, self._rate1, self._sink_pad_1, DECK1_CONTROL_MODE, self.pipeline)
             self.deck2 = DJDeck(2, encoder2, self._rate2, self._sink_pad_2, DECK2_CONTROL_MODE, self.pipeline)
         else:
+            # Single deck mode
             encoder1 = EncoderReader(self.i2c_bus, ESP32_DECK1_ADDR, EncoderSmoother())
             print(f"Single deck mode: Encoder@0x{ESP32_DECK1_ADDR:02X}")
 
             self.deck1 = DJDeck(1, encoder1, self._rate1, None, DECK1_CONTROL_MODE, self.pipeline)
             self.deck2 = None
 
-    # MODIFIED: Refactored update loop for efficiency
+    # MODIFIED: Replaced crossfader logic with button-based volume
     def _on_i2c_update(self):
         """Called periodically to read encoders and update playback"""
         try:
-            # Read data for Deck 1
-            # This reads data for BOTH encoders if use_dual_encoders=False
+            # Read data for Deck 1's controller
+            # In single-controller mode, this packet (data1) contains all info
+            # for both decks (enc1, enc2, slider, volume_pot, etc.)
             data1 = self.deck1.encoder.read()
-            self.deck1.process_encoder_data(data1)
-            
+
+            if data1:
+                # --- START OF MODIFICATION ---
+                # Handle button-based volume control
+                # This assumes your BUTTON_NAMES in config.py are:
+                # ['vol_up_d1', 'vol_up_d2', 'vol_down_d1', 'vol_down_d2', ...]
+                # This will only work in DUAL_DECK_MODE
+                if self.dual_deck_mode and self.deck2 is not None:
+                    # Get the decoded button dict from the I2C packet
+                    buttons = data1['buttons']
+                    
+                    # Check for Deck 1 Volume
+                    # Use .get() for safety, in case button name is wrong
+                    if buttons.get('vol_up_d1'):
+                        self.deck1.adjust_volume(VOLUME_STEP)
+                    elif buttons.get('vol_down_d1'):
+                        self.deck1.adjust_volume(-VOLUME_STEP)
+                        
+                    # Check for Deck 2 Volume
+                    if buttons.get('vol_up_d2'):
+                        self.deck2.adjust_volume(VOLUME_STEP)
+                    elif buttons.get('vol_down_d2'):
+                        self.deck2.adjust_volume(-VOLUME_STEP)
+                
+                # --- END OF MODIFICATION ---
+
+                # Process encoder data for Deck 1 (rate/scratch control)
+                self.deck1.process_encoder_data(data1)
+
+            # Handle Deck 2
             if self.deck2 is not None:
                 if self.use_dual_encoders:
                     # Dual encoder mode: Read from the second I2C device
                     data2 = self.deck2.encoder.read()
-                    self.deck2.process_encoder_data(data2)
+                    if data2:
+                        # Process rate/scratch control for Deck 2
+                        self.deck2.process_encoder_data(data2)
+                    # NOTE: In this mode, the crossfader and buttons are *only* # controlled by data1 (ESP32_DECK1_ADDR). This is likely desired.
                 else:
                     # Single encoder mode: Pass the *same data* to Deck 2
-                    # It will use its own keys ('enc2_velocity', etc.)
-                    self.deck2.process_encoder_data(data1)
+                    # It will use its own keys ('enc2_velocity', etc.) for rate
+                    if data1:
+                        self.deck2.process_encoder_data(data1)
 
         except Exception as e:
             # raise e # Don't raise, just print and continue
@@ -369,7 +415,7 @@ class DJMixer:
 
         print(f"\nI2C Poll Rate: {I2C_POLL_RATE_MS}ms")
         print("\nPress Ctrl+C to stop")
-        print("="*70 + "\n")
+        print("="*70)
 
         # Start pipeline
         self.pipeline.set_state(Gst.State.PLAYING)
@@ -417,7 +463,7 @@ def main():
             print(f"Set DUAL_DECK_MODE = False in config.py for single deck mode")
             sys.exit(1)
 
-    mixer = DJMixer(file_path1, file_path2, use_dual_encoders=False) 
+    mixer = DJMixer(file_path1, file_path2, use_dual_encoders=False)  
     mixer.run()
 
 

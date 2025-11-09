@@ -37,22 +37,17 @@ async function getTokenFromServer() {
     }
 }
 
-// connect to rpi websocket
 function connect() {
     console.log("Attempting Socket.IO connection to", WEBSOCKET_ADDRESS);
     
-    // The previous explicit options for `secure: true` are often still necessary
-    // when tunneling through ngrok to ensure the WSS protocol is attempted.
-    ws = io(WEBSOCKET_ADDRESS.replace("https://", "wss://"), {
+    ws = io(WEBSOCKET_ADDRESS, {
         transports: ['websocket'],
         secure: true,
     });
 
-    // ... (rest of the connection handlers remain the same) ...
     ws.on('connect', () => {
         updateStatus("Connected");
-        // FIX: The `socket` object is undefined here, use the `ws` object defined globally
-        console.log("Socket.IO connected. ID:", ws.id); 
+        console.log("Socket.IO connected. ID:", ws.id);
     });
 
     ws.on('disconnect', () => {
@@ -71,6 +66,15 @@ function connect() {
 
     ws.on('status_update', (data) => {
         console.log("Download Status:", data.message);
+        updateStatus(data.message); // Update the status bar with the message
+    });
+    
+    ws.on('playlist_update', (data) => {
+        console.log("Received new playlist from Pi:", data.songs);
+        // Overwrite the local songs list with the server's master list
+        songs = data.songs || []; 
+        buildPlaylist(); // Re-render the table with the new data
+        updateStatus("Playlist synced with Pi");
     });
 }
 
@@ -168,6 +172,8 @@ async function liveSpotifySearch() {
 function addSongFromSearch(title, artist, album, uri, duration_ms) {
     const resultsDiv = document.getElementById("searchResults");
     resultsDiv.style.display = "none";
+    
+    // Construct the song object with all data needed for the RPI to store
     const newSong = {
         title,
         artist,
@@ -175,19 +181,15 @@ function addSongFromSearch(title, artist, album, uri, duration_ms) {
         duration: msToMinutes(duration_ms),
         duration_ms,
         spotify_uri: uri,
+        action: ACTION.ADD_SONG // Include the action for the RPI
     };
-    songs.push(newSong);
-    buildPlaylist();
-    updateStatus(`Added "${title}" from Spotify`);
-
-    const payload = {
-        title: title,
-        artist: artist,
-        action: ACTION.ADD_SONG 
-    };
-    sendSong(payload);
+    
+    // The server will now receive this, add it to its master list, and broadcast
+    // the full updated list back to all clients (including this one).
+    sendSong(newSong);
+    
+    updateStatus(`Requesting RPI to add "${title}"`);
 }
-
 // playback control
 function selectSong(i) {
     const song = songs[i];

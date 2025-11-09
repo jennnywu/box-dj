@@ -6,11 +6,14 @@ import time
 import requests
 import base64
 import hashlib
+import atexit
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template_string, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS 
 import logging
+
+from mixer import DJMixer
 
 
 # ============ LOGGING ============ #
@@ -34,7 +37,8 @@ CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 if not CLIENT_ID or not CLIENT_SECRET:
     raise ValueError("Missing Spotify credentials in .env file")
 
-DOWNLOAD_DIR = "/home/jenny/box-dj/rpi/dj_downloads"
+# Use a relative path for downloads
+DOWNLOAD_DIR = "dj_downloads"
 PORT = 8080 
 TOKEN_CACHE = {"access_token": None, "expires_at": 0}
 
@@ -52,6 +56,15 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 PLAYLISTS = {'deck1': [], 'deck2': []}
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
+# ======== MIXER SETUP ======== #
+mixer = DJMixer()
+
+# Graceful shutdown for the mixer
+def stop_mixer():
+    print("Shutting down mixer...")
+    mixer.stop()
+atexit.register(stop_mixer)
+
 
 # ============ UTILS ============ #
 def hash_uri(uri: str) -> str:
@@ -59,19 +72,26 @@ def hash_uri(uri: str) -> str:
     return hashlib.sha1(uri.encode('utf-8')).hexdigest()[:10]
 
 
+def find_song_by_id(song_id: str, deck_id: str) -> dict | None:
+    """Finds a song by its ID in the specified deck's playlist."""
+    target_playlist = PLAYLISTS.get(deck_id)
+    if not target_playlist:
+        return None
+    for song in target_playlist:
+        if song.get('id') == song_id:
+            return song
+    return None
+
+
 def update_song_in_playlist(song_id: str, deck_id: str, update_data: dict):
     """Finds a song by ID in the specified deck's playlist and updates its fields."""
     
-    target_playlist = PLAYLISTS.get(deck_id)
-    if target_playlist is None:
-        app.logger.error(f"Invalid deck_id '{deck_id}' for song update.")
-        return False
-
-    for song in target_playlist:
-        if song.get('id') == song_id:
-            app.logger.info(f"Updating song ID {song_id} in {deck_id} with data: {update_data.keys()}")
-            song.update(update_data)
-            return True
+    song = find_song_by_id(song_id, deck_id)
+    if song:
+        app.logger.info(f"Updating song ID {song_id} in {deck_id} with data: {update_data.keys()}")
+        song.update(update_data)
+        return True
+    
     app.logger.warning(f"Failed to find song with ID {song_id} in {deck_id} to update.")
     return False
 
@@ -124,11 +144,24 @@ def download_song(song_data: dict, deck_id: str):
     title = song_data.get("title")
     artist = song_data.get("artist")
     
-    filename_base = f"{song_id}_{artist.replace(' ', '_')}_{title.replace(' ', '_')}"
-    output_template = os.path.join(DOWNLOAD_DIR, f"{filename_base}.%(ext)s")
+    # Sanitize for filesystem
+    safe_artist = artist.replace(' ', '_').replace('/', '_')
+    safe_title = title.replace(' ', '_').replace('/', '_')
     
+    filename_base = f"{song_id}_{safe_artist}_{safe_title}"
+    output_template = os.path.join(DOWNLOAD_DIR, f"{filename_base}.%(ext)s")
+    final_path = os.path.join(DOWNLOAD_DIR, f"{filename_base}.mp3")
+
+    # Skip download if file already exists
+    if os.path.exists(final_path):
+        app.logger.info(f"Song '{title}' already downloaded. Skipping.")
+        if update_song_in_playlist(song_id, deck_id, {'download_path': final_path}):
+            broadcast_playlist_update()
+        socketio.emit('status_update', {'message': f'Already downloaded: {artist} - {title}'})
+        return
+
     socketio.emit('status_update', 
-                  {'message': f'Download started for {deck_id}: {artist} - {title}'}, # Updated message
+                  {'message': f'Download started for {deck_id}: {artist} - {title}'},
                   ) 
     
     download_command = f"yt-dlp -x --audio-format mp3 --no-playlist 'ytsearch:{artist} {title}' -o '{output_template}'"
@@ -136,8 +169,6 @@ def download_song(song_data: dict, deck_id: str):
     
     os.system(download_command) 
     
-    final_path = os.path.join(DOWNLOAD_DIR, f"{filename_base}.mp3")
-
     app.logger.info(f"Download complete for {deck_id}: {artist} - {title}. Expected path: {final_path}")
     
     if update_song_in_playlist(song_id, deck_id, {'download_path': final_path}): 
@@ -167,13 +198,12 @@ def handle_json_message(data):
     app.logger.info(f"< Received message: {data}")
 
     try:
+        # Handle dictionary-based messages (for adding/playing songs)
         if isinstance(data, dict):
             action = data.get("action")
-            # New: Get deck_id from the incoming message
             deck_id = data.get("deck_id") 
             spotify_uri = data.get("spotify_uri")
             
-            # --- Song Data setup remains the same ---
             song_data = {
                 'id': hash_uri(spotify_uri) if spotify_uri else None, 
                 'title': data.get("title"),
@@ -183,10 +213,9 @@ def handle_json_message(data):
                 'duration_ms': data.get("duration_ms"),
                 'download_path': None 
             }
-            # ----------------------------------------
             
             if action == "ADD_SONG":
-                if not song_data['id'] or deck_id not in PLAYLISTS: # Validate deck_id
+                if not song_data['id'] or deck_id not in PLAYLISTS:
                     app.logger.error("Cannot add song: Missing Spotify URI or invalid deck_id.")
                     return
                 
@@ -197,25 +226,49 @@ def handle_json_message(data):
                 socketio.start_background_task(download_song, song_data, deck_id)
 
             elif action == "PLAY_SONG":
-                app.logger.info(f"PLAY_SONG request for song ID: {song_data.get('id')}")
+                title_to_play = data.get('title')
+                app.logger.info(f"PLAY_SONG request for '{title_to_play}' on {deck_id}")
                 
-            elif data == "resume" or data == "pause":
-                app.logger.info(f"Playback control: {data} - Not Implemented")
+                # Find the song in the playlist
+                song_to_play = next((s for s in PLAYLISTS[deck_id] if s['title'] == title_to_play), None)
+
+                if song_to_play and song_to_play.get('download_path'):
+                    path = song_to_play['download_path']
+                    app.logger.info(f"Found song at path: {path}. Loading and playing on {deck_id}.")
+                    mixer.load_song(deck_id, path)
+                    mixer.play(deck_id)
+                else:
+                    app.logger.error(f"Could not play '{title_to_play}'. Not found or not downloaded.")
 
             else:
                 app.logger.warning(f"Unknown action: {action}")
-        else:
-            app.logger.warning("Received non-dictionary data, ignoring.")
+
+        # Handle simple string-based commands (for playback control)
+        elif isinstance(data, str):
+            if data.startswith('pause_'):
+                deck_id = data.split('_')[1]
+                app.logger.info(f"Pausing {deck_id}")
+                mixer.pause(deck_id)
+            elif data.startswith('resume_'):
+                deck_id = data.split('_')[1]
+                app.logger.info(f"Resuming {deck_id}")
+                mixer.play(deck_id)
+            else:
+                app.logger.warning(f"Unknown string command: {data}")
 
     except Exception as e:
-        app.logger.error(f"!!! An error occurred processing the message: {e}")
+        app.logger.error(f"!!! An error occurred processing the message: {e}", exc_info=True)
         emit('error', {'message': f'Server error: {e}'})
 
 
 # ============ RUN SERVER ============ #
 if __name__ == "__main__":
     app.logger.info(f"Starting RPi DJ server at http://0.0.0.0:{PORT} (HTTP and Socket.IO enabled)")
-    app.logger.info(f"Saving files to {DOWNLOAD_DIR}")
+    app.logger.info(f"Saving files to {os.path.abspath(DOWNLOAD_DIR)}")
+    
+    # Start the mixer's GStreamer loop
+    mixer.run()
+    
     if 'eventlet' in globals():
         app.logger.info("Using eventlet server.")
         eventlet.wsgi.server(

@@ -13,7 +13,7 @@ from flask_socketio import SocketIO, emit
 from flask_cors import CORS 
 import logging
 
-from mixer import DJMixer
+from play_song import Player
 
 
 # ============ LOGGING ============ #
@@ -56,14 +56,14 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 PLAYLISTS = {'deck1': [], 'deck2': []}
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
-# ======== MIXER SETUP ======== #
-mixer = DJMixer()
+# ======== PLAYER SETUP ======== #
+player = Player()
 
-# Graceful shutdown for the mixer
-def stop_mixer():
-    print("Shutting down mixer...")
-    mixer.stop()
-atexit.register(stop_mixer)
+# Graceful shutdown for the player
+def stop_player():
+    print("Shutting down player...")
+    player.stop()
+atexit.register(stop_player)
 
 
 # ============ UTILS ============ #
@@ -235,9 +235,8 @@ def handle_json_message(data):
                 if song_to_play:
                     path = song_to_play.get('download_path')
                     if path and os.path.exists(path):
-                        app.logger.info(f"--> Found song at path: '{path}'. Loading and playing on {deck_id}.")
-                        mixer.load_song(deck_id, path)
-                        mixer.play(deck_id)
+                        app.logger.info(f"--> Found song at path: '{path}'. Playing now.")
+                        player.play_song(path)
                     else:
                         app.logger.warning(f"--> WARNING: Song '{title_to_play}' is not downloaded yet.")
                 else:
@@ -249,13 +248,11 @@ def handle_json_message(data):
         # Handle simple string-based commands (for playback control)
         elif isinstance(data, str):
             if data.startswith('pause_'):
-                deck_id = data.split('_')[1]
-                app.logger.info(f"Pausing {deck_id}")
-                mixer.pause(deck_id)
+                app.logger.info(f"Pausing player")
+                player.pause()
             elif data.startswith('resume_'):
-                deck_id = data.split('_')[1]
-                app.logger.info(f"Resuming {deck_id}")
-                mixer.play(deck_id)
+                app.logger.info(f"Resuming player")
+                player.resume()
             else:
                 app.logger.warning(f"Unknown string command: {data}")
 
@@ -269,8 +266,8 @@ if __name__ == "__main__":
     app.logger.info(f"Starting RPi DJ server at http://0.0.0.0:{PORT} (HTTP and Socket.IO enabled)")
     app.logger.info(f"Saving files to {os.path.abspath(DOWNLOAD_DIR)}")
     
-    # Start the mixer's GStreamer loop
-    mixer.run()
+    # The new Player class starts its own loop, so we don't need to call it here.
+    # mixer.run()
     
     if 'eventlet' in globals():
         app.logger.info("Using eventlet server.")

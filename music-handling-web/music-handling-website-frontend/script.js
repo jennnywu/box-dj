@@ -1,8 +1,8 @@
-const PI_IP = "172.20.10.8";
+const PI_IP = "127.0.0.1";
 const PI_PORT = 8080;
 const USE_FORWARDER = true; // Use ngrok to forward or not
 
-const DOMAIN = USE_FORWARDER ? "5cb7be3d6edf.ngrok-free.app" : `${PI_IP}:${PI_PORT}`;
+const DOMAIN = USE_FORWARDER ? "73838a5b9b21.ngrok-free.app" : `${PI_IP}:${PI_PORT}`;
 const BASE_URL = USE_FORWARDER ? `https://${DOMAIN}` : `http://${DOMAIN}`;
 const WEBSOCKET_ADDRESS = USE_FORWARDER ? `wss://${DOMAIN}` : `ws://${DOMAIN}`; // Socket.IO uses the BASE_URL
 
@@ -16,6 +16,7 @@ let ws;
 let isPlaying = false;
 let currentSong = "";
 let playlists = {'deck1': [], 'deck2': []}; // These will be updated by the server
+let deckPlayState = {'deck1': false, 'deck2': false};
 let dropdownTimeout = null;
 
 let activeDeck = 'deck1'; 

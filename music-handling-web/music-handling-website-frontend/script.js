@@ -3,7 +3,12 @@ const PI_IP = "172.20.10.8";
 const PI_PORT = 8080;
 const USE_FORWARDER = true; // Use ngrok to forward or not
 // const WEBSOCKET_ADDRESS = 
-const WEBSOCKET_ADDRESS = USE_FORWARDER ? "https://a6570870fa79.ngrok-free.app" : `ws://${PI_IP}:${PI_PORT}`;
+const WEBSOCKET_ADDRESS = USE_FORWARDER ? "https://e8894d0e3d6a.ngrok-free.app" : `http://${PI_IP}:${PI_PORT}`;
+
+const ACTION = {
+  PLAY_SONG: "PLAY_SONG",
+  ADD_SONG: "ADD_SONG",
+}
 
 let SPOTIFY_TOKEN = "";
 let ws;
@@ -27,28 +32,35 @@ async function getTokenFromServer() {
 
 // connect to rpi websocket
 function connect() {
-  console.log("Attempting WebSocket connection to", WEBSOCKET_ADDRESS);
-  ws = new WebSocket(WEBSOCKET_ADDRESS);
+  console.log("Attempting Socket.IO connection to", WEBSOCKET_ADDRESS);
+  
+  ws = io(WEBSOCKET_ADDRESS, {
+    transports: ['websocket'],
+    secure: true,
+  });
 
-  ws.onopen = () => {
+  ws.on('connect', () => {
     updateStatus("Connected");
-    console.log("WebSocket connected");
-  };
+    console.log("Socket.IO connected. ID:", socket.id);
+  });
 
-  ws.onclose = () => {
+  ws.on('disconnect', () => {
     updateStatus("Disconnected");
-    console.warn("WebSocket disconnected. Reconnecting in 5 seconds...");
-    setTimeout(connect, 5000);
-  };
+    console.warn("Socket.IO disconnected.");
+  });
+  
+  ws.on('connect_error', (error) => {
+    console.error("Socket.IO connection error:", error.message);
+    updateStatus("Error: " + error.message);
+  });
 
-  ws.onerror = (e) => {
-    console.error("WebSocket error:", e.message);
-    updateStatus("Error: " + e.message);
-  };
+  ws.on('message', (data) => {
+    console.log("Message from Pi:", data);
+  });
 
-  ws.onmessage = (e) => {
-    console.log("Message from Pi:", e.data);
-  };
+  ws.on('status_update', (data) => {
+    console.log("Download Status:", data.message);
+  });
 }
 
 // utility functions
@@ -169,40 +181,30 @@ function selectSong(i) {
   const payload = {
     title: song.title,
     artist: song.artist,
-    // spotify_uri: song.spotify_uri,
+    action: ACTION.PLAY_SONG
   };
   sendSong(payload);
 }
 
-// send json payload to rpi
 function sendSong(songInfo) {
-  console.log("sendSong() called with:", songInfo);
+    console.log("sendSong() called with:", songInfo);
 
-  if (!ws) {
-    console.warn("No WebSocket instance found");
-    updateStatus("Not connected to Pi");
-    return;
-  }
+    if (!ws || !ws.connected) {
+        console.warn("Socket.IO not connected; skipping send.");
+        updateStatus("Not connected to Pi");
+        return;
+    }
 
-  if (ws.readyState === WebSocket.CONNECTING) {
-    console.log("WebSocket still connecting, delaying send...");
-    setTimeout(() => sendSong(songInfo), 500);
-    return;
-  }
-
-  if (ws.readyState === WebSocket.OPEN) {
+    // This section is now clean Socket.IO logic
     console.log("Sending to Pi:", songInfo);
-    ws.send(JSON.stringify(songInfo));
+    ws.emit('message', songInfo); 
     updateStatus(`Sent "${songInfo.title}" to Pi`);
-  } else {
-    console.warn("WebSocket not open; state:", ws.readyState);
-    updateStatus("Not connected to Pi");
-  }
 }
+
 
 // raw message helper
 function sendRaw(text) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+  if (ws && ws.readyState === WebSocket.OPEN) ws.emit("message", text);
 }
 
 // play / pause toggle

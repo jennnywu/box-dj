@@ -71,24 +71,30 @@ class DJDeck:
         """Loads a new song into the deck."""
         print(f"Deck {self.deck_id}: Loading song {file_path}")
         self.pipeline.set_state(Gst.State.READY)
+        self.pipeline.get_state(Gst.CLOCK_TIME_NONE) # Block until state change is complete
         self.src.set_property("location", file_path)
+        # Go to PAUSED to allow decodebin to discover the stream format (preroll).
+        self.pipeline.set_state(Gst.State.PAUSED)
+        self.pipeline.get_state(Gst.CLOCK_TIME_NONE) # Block until state change is complete
         self.state = PlaybackState.PAUSED # Ready to play
-        print(f"Deck {self.deck_id}: State changed to READY")
+        print(f"Deck {self.deck_id}: State changed to PAUSED")
 
     def play(self):
         """Starts or resumes playback for this deck."""
         if self.state != PlaybackState.PLAYING:
             print(f"Deck {self.deck_id}: Setting to PLAYING at volume {self.current_volume:.2f}")
             self.pipeline.set_state(Gst.State.PLAYING)
+            self.pipeline.get_state(Gst.CLOCK_TIME_NONE) # Block until state change is complete
             self.state = PlaybackState.PLAYING
         else:
-            print(f"Deck {self.deck_id}: Already playing")
+            print(f"Deck {self.deck_id}: Already playing at volume {self.current_volume:.2f}")
 
     def pause(self):
         """Pauses playback for this deck."""
         if self.state == PlaybackState.PLAYING:
             print(f"Deck {self.deck_id}: Setting to PAUSED")
             self.pipeline.set_state(Gst.State.PAUSED)
+            self.pipeline.get_state(Gst.CLOCK_TIME_NONE) # Block until state change is complete
             self.state = PlaybackState.PAUSED
         else:
             print(f"Deck {self.deck_id}: Not currently playing")
@@ -115,6 +121,32 @@ class DJMixer:
         
         # Run the GStreamer main loop in a separate thread
         self.thread = threading.Thread(target=self.loop.run, daemon=True)
+
+        # Add a bus watcher to receive messages from the pipeline
+        bus = self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message", self.on_bus_message)
+
+    def on_bus_message(self, bus, message):
+        """Catches messages from the GStreamer bus and prints them."""
+        t = message.type
+        if t == Gst.MessageType.ERROR:
+            err, dbg = message.parse_error()
+            print(f"!!! Pipeline ERROR: {message.src.get_name()} -> {err.message}")
+            if dbg:
+                print(f"    Debug info: {dbg}")
+        elif t == Gst.MessageType.WARNING:
+            err, dbg = message.parse_warning()
+            print(f"!!! Pipeline WARNING: {message.src.get_name()} -> {err.message}")
+            if dbg:
+                print(f"    Debug info: {dbg}")
+        elif t == Gst.MessageType.EOS:
+            print(f"--- End-of-Stream from {message.src.get_name()} ---")
+        elif t == Gst.MessageType.STATE_CHANGED:
+            # Filter for messages from the pipeline itself
+            if message.src == self.pipeline:
+                old_state, new_state, pending_state = message.parse_state_changed()
+                print(f"--- Pipeline state changed from {old_state.value_nick.upper()} to {new_state.value_nick.upper()} ---")
 
     def _build_pipeline(self):
         """Build the GStreamer audio pipeline for two decks."""

@@ -24,18 +24,18 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sensors.h"
+#include "utils.h"
 
 /*------------------------------------------------------------------------------------------------*/
 /* MACROS                                                                                         */
 /*------------------------------------------------------------------------------------------------*/
 
 // Rotary encoder pins
-#define ENCODER_PIN_N       GPIO_NUM_26  // Main encoder signal (N)
-#define ENCODER_PIN_2       GPIO_NUM_27  // Second signal (could be quadrature or differential)
-#define ENCODER_VCC_PIN     -1           // Set to GPIO if you need to control power
+// Wiring: GND -> ESP32 GND, Pin "2" -> ESP32 GND, N -> GPIO26, N̅ -> GPIO27
+#define ENCODER_PIN_A       GPIO_NUM_26  // Phase A (N pin)
+#define ENCODER_PIN_B       GPIO_NUM_27  // Phase B (N̅ pin)
 
 // PCNT configuration
-#define PCNT_UNIT           0
 #define PCNT_HIGH_LIMIT     10000
 #define PCNT_LOW_LIMIT      -10000
 
@@ -62,83 +62,93 @@ static esp_err_t encoder_init(void)
 {
     esp_err_t ret;
 
+    // Configure GPIO pull-ups for mechanical encoder
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << ENCODER_PIN_A) | (1ULL << ENCODER_PIN_B),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    ret = gpio_config(&io_conf);
+    if (ret != ESP_OK) {
+        LOG_ERROR(TAG, "Failed to configure GPIO pull-ups: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // PCNT unit configuration
     pcnt_unit_config_t unit_config = {
         .high_limit = PCNT_HIGH_LIMIT,
         .low_limit = PCNT_LOW_LIMIT,
-        .flags.accum_count = 0,  // Don't accumulate on overflow
     };
 
     ret = pcnt_new_unit(&unit_config, &pcnt_unit);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create PCNT unit: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to create PCNT unit: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Configure channel 0 (main encoder signal N)
+    // Quadrature encoder configuration (simpler API)
     pcnt_chan_config_t chan_a_config = {
-        .edge_gpio_num = ENCODER_PIN_N,
-        .level_gpio_num = ENCODER_PIN_2,  // Use pin 2 for direction detection
+        .edge_gpio_num = ENCODER_PIN_A,
+        .level_gpio_num = ENCODER_PIN_B,
     };
 
     pcnt_channel_handle_t pcnt_chan_a = NULL;
     ret = pcnt_new_channel(pcnt_unit, &chan_a_config, &pcnt_chan_a);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create PCNT channel A: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to create PCNT channel A: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Configure channel 1 (for quadrature decoding)
     pcnt_chan_config_t chan_b_config = {
-        .edge_gpio_num = ENCODER_PIN_2,
-        .level_gpio_num = ENCODER_PIN_N,
+        .edge_gpio_num = ENCODER_PIN_B,
+        .level_gpio_num = ENCODER_PIN_A,
     };
 
     pcnt_channel_handle_t pcnt_chan_b = NULL;
     ret = pcnt_new_channel(pcnt_unit, &chan_b_config, &pcnt_chan_b);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create PCNT channel B: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to create PCNT channel B: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Set edge and level actions for quadrature decoder
-    // Channel A
+    // Set edge and level actions for quadrature decoding
     pcnt_channel_set_edge_action(pcnt_chan_a, PCNT_CHANNEL_EDGE_ACTION_DECREASE, PCNT_CHANNEL_EDGE_ACTION_INCREASE);
     pcnt_channel_set_level_action(pcnt_chan_a, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
-    // Channel B
     pcnt_channel_set_edge_action(pcnt_chan_b, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE);
     pcnt_channel_set_level_action(pcnt_chan_b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE);
 
-    // Add glitch filter (optional, helps with noise)
+    // Add glitch filter to reduce noise from mechanical contacts
     pcnt_glitch_filter_config_t filter_config = {
-        .max_glitch_ns = 1000,  // Filter out glitches < 1us
+        .max_glitch_ns = 1000,  // Filter glitches < 1us
     };
     ret = pcnt_unit_set_glitch_filter(pcnt_unit, &filter_config);
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to set glitch filter: %s", esp_err_to_name(ret));
+        LOG_WARN(TAG, "Failed to set glitch filter: %s", esp_err_to_name(ret));
     }
 
     // Enable and start the PCNT unit
     ret = pcnt_unit_enable(pcnt_unit);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to enable PCNT unit: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to enable PCNT unit: %s", esp_err_to_name(ret));
         return ret;
     }
 
     ret = pcnt_unit_clear_count(pcnt_unit);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to clear PCNT count: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to clear PCNT count: %s", esp_err_to_name(ret));
         return ret;
     }
 
     ret = pcnt_unit_start(pcnt_unit);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start PCNT unit: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to start PCNT unit: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    ESP_LOGI(TAG, "Rotary encoder initialized on GPIO %d and %d", ENCODER_PIN_N, ENCODER_PIN_2);
+    LOG_INFO(TAG, "Rotary encoder initialized on GPIO %d (A) and %d (B)", ENCODER_PIN_A, ENCODER_PIN_B);
     return ESP_OK;
 }
 
@@ -149,25 +159,27 @@ esp_err_t sensors_init(void)
     // Initialize rotary encoder
     ret = encoder_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize encoder");
+        LOG_ERROR(TAG, "Failed to initialize encoder");
         return ret;
     }
 
-    ESP_LOGI(TAG, "All sensors initialized successfully");
+    vTaskDelay(pdMS_TO_TICKS(5)); // Small delay to ensure settings take effect
+
+    LOG_INFO(TAG, "All sensors initialized successfully");
     return ESP_OK;
 }
 
 int32_t encoder_get_position(void)
 {
     if (pcnt_unit == NULL) {
-        ESP_LOGE(TAG, "Encoder not initialized");
+        LOG_ERROR(TAG, "Encoder not initialized");
         return 0;
     }
 
     int count = 0;
     esp_err_t ret = pcnt_unit_get_count(pcnt_unit, &count);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to get encoder count: %s", esp_err_to_name(ret));
         return encoder_offset;
     }
 
@@ -177,20 +189,20 @@ int32_t encoder_get_position(void)
 void encoder_reset_position(void)
 {
     if (pcnt_unit == NULL) {
-        ESP_LOGE(TAG, "Encoder not initialized");
+        LOG_ERROR(TAG, "Encoder not initialized");
         return;
     }
 
     encoder_offset = 0;
     pcnt_unit_clear_count(pcnt_unit);
     last_position = 0;
-    ESP_LOGI(TAG, "Encoder position reset to 0");
+    LOG_INFO(TAG, "Encoder position reset to 0");
 }
 
 float encoder_get_velocity(uint32_t sample_period_ms)
 {
     if (pcnt_unit == NULL) {
-        ESP_LOGE(TAG, "Encoder not initialized");
+        LOG_ERROR(TAG, "Encoder not initialized");
         return 0.0;
     }
 

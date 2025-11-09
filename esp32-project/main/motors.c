@@ -22,7 +22,10 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "motors.h"
+#include "utils.h"
 
 /*------------------------------------------------------------------------------------------------*/
 /* MACROS                                                                                         */
@@ -124,27 +127,27 @@ static esp_err_t motor_gpio_init(void)
     for (int i = 0; i < num_pins; i++) {
         ret = gpio_reset_pin(direction_pins[i]);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to reset GPIO %d: %s",
+            LOG_ERROR(TAG, "Failed to reset GPIO %d: %s",
                      direction_pins[i], esp_err_to_name(ret));
             return ret;
         }
 
         ret = gpio_set_direction(direction_pins[i], GPIO_MODE_OUTPUT);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set direction for GPIO %d: %s",
+            LOG_ERROR(TAG, "Failed to set direction for GPIO %d: %s",
                      direction_pins[i], esp_err_to_name(ret));
             return ret;
         }
 
         ret = gpio_set_level(direction_pins[i], 0);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set level for GPIO %d: %s",
+            LOG_ERROR(TAG, "Failed to set level for GPIO %d: %s",
                      direction_pins[i], esp_err_to_name(ret));
             return ret;
         }
     }
 
-    ESP_LOGI(TAG, "Direction GPIOs initialized");
+    LOG_INFO(TAG, "Direction GPIOs initialized");
     return ESP_OK;
 }
 
@@ -162,7 +165,7 @@ static esp_err_t motor_pwm_init(void)
     };
     ret = ledc_timer_config(&timer_conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure PWM timer: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to configure PWM timer: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -177,7 +180,7 @@ static esp_err_t motor_pwm_init(void)
     };
     ret = ledc_channel_config(&motor_a_channel);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure Motor A PWM: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to configure Motor A PWM: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -192,11 +195,11 @@ static esp_err_t motor_pwm_init(void)
     };
     ret = ledc_channel_config(&motor_b_channel);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure Motor B PWM: %s", esp_err_to_name(ret));
+        LOG_ERROR(TAG, "Failed to configure Motor B PWM: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    ESP_LOGI(TAG, "PWM initialized");
+    LOG_INFO(TAG, "PWM initialized");
     return ESP_OK;
 }
 
@@ -204,6 +207,7 @@ static void set_motor_direction(motor_direction_t direction)
 {
     switch (direction) {
         case MOTOR_FORWARD:
+            LOG_DEBUG(TAG, "Setting direction: FORWARD (IN1=0, IN2=1, IN3=0, IN4=1)");
             // Motor A forward
             gpio_set_level(MOTOR_A_IN1, 0);
             gpio_set_level(MOTOR_A_IN2, 1);
@@ -213,6 +217,7 @@ static void set_motor_direction(motor_direction_t direction)
             break;
 
         case MOTOR_BACKWARD:
+            LOG_DEBUG(TAG, "Setting direction: BACKWARD (IN1=1, IN2=0, IN3=1, IN4=0)");
             // Motor A backward
             gpio_set_level(MOTOR_A_IN1, 1);
             gpio_set_level(MOTOR_A_IN2, 0);
@@ -222,6 +227,7 @@ static void set_motor_direction(motor_direction_t direction)
             break;
 
         case MOTOR_STOP:
+            LOG_DEBUG(TAG, "Setting direction: STOP (all pins LOW)");
             // Stop both motors
             gpio_set_level(MOTOR_A_IN1, 0);
             gpio_set_level(MOTOR_A_IN2, 0);
@@ -233,6 +239,8 @@ static void set_motor_direction(motor_direction_t direction)
 
 static void set_motor_pwm(uint8_t speed)
 {
+    LOG_DEBUG(TAG, "Setting PWM speed: %d (on EN pins %d, %d)", speed, MOTOR_A_EN, MOTOR_B_EN);
+
     // Set Motor A speed
     ledc_set_duty(PWM_MODE, MOTOR_A_CHANNEL, speed);
     ledc_update_duty(PWM_MODE, MOTOR_A_CHANNEL);
@@ -249,30 +257,36 @@ esp_err_t motors_init(void)
     // Initialize direction GPIOs
     ret = motor_gpio_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Motor GPIO initialization failed");
+        LOG_ERROR(TAG, "Motor GPIO initialization failed");
         return ret;
     }
 
     // Initialize PWM
     ret = motor_pwm_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Motor PWM initialization failed");
+        LOG_ERROR(TAG, "Motor PWM initialization failed");
         return ret;
     }
 
     // Stop motors initially
     motors_stop();
 
-    ESP_LOGI(TAG, "Motors initialized successfully");
+    LOG_INFO(TAG, "Motors initialized successfully");
     return ESP_OK;
 }
 
 esp_err_t motors_set(uint8_t speed, motor_direction_t direction)
 {
+    // Set direction first
     set_motor_direction(direction);
+
+    // Small delay to allow direction pins to settle before applying PWM
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Then set PWM speed
     set_motor_pwm(speed);
 
-    ESP_LOGI(TAG, "Motors set - Speed: %d, Direction: %d", speed, direction);
+    LOG_INFO(TAG, "Motors set - Speed: %d, Direction: %d", speed, direction);
     return ESP_OK;
 }
 
@@ -291,6 +305,6 @@ esp_err_t motors_stop(void)
     set_motor_direction(MOTOR_STOP);
     set_motor_pwm(0);
 
-    ESP_LOGI(TAG, "Motors stopped");
+    LOG_INFO(TAG, "Motors stopped");
     return ESP_OK;
 }

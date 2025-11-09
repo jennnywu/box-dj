@@ -1,27 +1,25 @@
 /**************************************************************************************************/
 /**
- * @file comm.h
+ * @file lcd.h
  * @author Ryan Jing (r5jing@uwaterloo.ca)
- * @brief Communication module for I2C
+ * @brief
  *
  * @version 0.1
- * @date 2025-11-07
+ * @date 2025-11-08
  *
  * @copyright Copyright (c) 2025
  *
  */
 /**************************************************************************************************/
 
-#ifndef COMM_H
-#define COMM_H
+#ifndef LCD_H
+#define LCD_H
 
 /*------------------------------------------------------------------------------------------------*/
 // HEADERS                                                                                        */
 /*------------------------------------------------------------------------------------------------*/
 
-#include <stdio.h>
-
-#include "driver/i2c.h"
+#include "hd44780.h"
 
 /*------------------------------------------------------------------------------------------------*/
 // GLOBAL VARIABLES                                                                               */
@@ -36,35 +34,33 @@
 
 
 /*------------------------------------------------------------------------------------------------*/
-// MACROS                                                                                         */
-/*------------------------------------------------------------------------------------------------*/
-
-// I2C Configuration
-#define I2C_SLAVE_SCL_IO        GPIO_NUM_32     // I2C SCL pin
-#define I2C_SLAVE_SDA_IO        GPIO_NUM_33     // I2C SDA pin
-#define I2C_SLAVE_NUM           I2C_NUM_0       // I2C port number
-#define I2C_SLAVE_ADDR          0x42            // ESP32 I2C slave address
-#define I2C_SLAVE_TX_BUF_LEN    128             // I2C slave tx buffer size
-#define I2C_SLAVE_RX_BUF_LEN    128             // I2C slave rx buffer size
-
-/*------------------------------------------------------------------------------------------------*/
 // FUNCTION DECLARATIONS                                                                          */
 /*------------------------------------------------------------------------------------------------*/
 
 /**************************************************************************************************/
 /**
- * @brief Initialize I2C slave communication
- * @return esp_err_t ESP_OK on success
+ * @name
+ * @brief
+ *
+ *
+ *
+ * @return esp_err_t
  */
 /**************************************************************************************************/
-esp_err_t comm_init(void);
+esp_err_t lcd_init(void);
+
 
 /**************************************************************************************************/
 /**
- * @brief Update encoder data in I2C buffer (call periodically)
- * @return esp_err_t ESP_OK on success
+ * @name
+ * @brief
+ *
+ *
+ * @param song_name
+ *
+ * @return esp_err_t
  */
 /**************************************************************************************************/
-esp_err_t comm_update_encoder_data(void);
+esp_err_t lcd_show_now_playing(const char *song_name);
 
-#endif // COMM_H
+#endif // LCD_H

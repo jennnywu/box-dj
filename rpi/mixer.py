@@ -88,7 +88,7 @@ class DJDeck:
         if DEBUG_PRINT_RATE:
             print(f"AVG RECENT VEL Deck {self.deck_id}: {avg_recent_velocity:.2f}")
 
-        if NORMAL_SPEED_MIN < avg_recent_velocity < NORMAL_SPEED_MAX:
+        if NORMAL_SPEED_MIN < avg_recent_velocity < NORMAL_SPEED_MAX or -NORMAL_SPEED_MAX < avg_recent_velocity < -NORMAL_SPEED_MIN:
             self.state = TurntableState.NORMAL_SPEED
         else:
             self.state = TurntableState.MODULATING_SPEED
@@ -184,7 +184,7 @@ class DJMixer:
         self.reverb1_on = False             # State for reverb toggle
         self.reverb2_on = False             # State for reverb toggle
         self.REVERB_AMOUNT = 0.5            # How much reverb to apply when "on"
-        self.VOLUME_STEP = 0.05             # How much to change volume per click
+        self.VOLUME_STEP = 0.2             # How much to change volume per click
         # --- END NEW ---
 
         self._build_pipeline(file_path1, file_path2)

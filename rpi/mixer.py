@@ -78,7 +78,7 @@ class DJDeck:
     def play(self):
         """Starts or resumes playback for this deck."""
         if self.state != PlaybackState.PLAYING:
-            print(f"Deck {self.deck_id}: Setting to PLAYING")
+            print(f"Deck {self.deck_id}: Setting to PLAYING at volume {self.current_volume:.2f}")
             self.pipeline.set_state(Gst.State.PLAYING)
             self.state = PlaybackState.PLAYING
         else:

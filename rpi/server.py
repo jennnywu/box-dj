@@ -227,18 +227,21 @@ def handle_json_message(data):
 
             elif action == "PLAY_SONG":
                 title_to_play = data.get('title')
-                app.logger.info(f"PLAY_SONG request for '{title_to_play}' on {deck_id}")
+                app.logger.info(f"Received PLAY_SONG request for '{title_to_play}' on {deck_id}")
                 
                 # Find the song in the playlist
                 song_to_play = next((s for s in PLAYLISTS[deck_id] if s['title'] == title_to_play), None)
 
-                if song_to_play and song_to_play.get('download_path'):
-                    path = song_to_play['download_path']
-                    app.logger.info(f"Found song at path: {path}. Loading and playing on {deck_id}.")
-                    mixer.load_song(deck_id, path)
-                    mixer.play(deck_id)
+                if song_to_play:
+                    path = song_to_play.get('download_path')
+                    if path and os.path.exists(path):
+                        app.logger.info(f"--> Found song at path: '{path}'. Loading and playing on {deck_id}.")
+                        mixer.load_song(deck_id, path)
+                        mixer.play(deck_id)
+                    else:
+                        app.logger.warning(f"--> WARNING: Song '{title_to_play}' is not downloaded yet.")
                 else:
-                    app.logger.error(f"Could not play '{title_to_play}'. Not found or not downloaded.")
+                    app.logger.error(f"--> ERROR: Could not find song '{title_to_play}' in the playlist for {deck_id}.")
 
             else:
                 app.logger.warning(f"Unknown action: {action}")

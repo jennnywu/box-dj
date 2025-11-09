@@ -35,7 +35,7 @@ if not CLIENT_ID or not CLIENT_SECRET:
     raise ValueError("Missing Spotify credentials in .env file")
 
 DOWNLOAD_DIR = "/home/jenny/box-dj/rpi/dj_downloads"
-PORT = 8080 # This is the main port for both HTTP and Socket.IO
+PORT = 8080 
 TOKEN_CACHE = {"access_token": None, "expires_at": 0}
 
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -48,8 +48,8 @@ app.config['SECRET_KEY'] = 'SUPER_SECRET_KEY'
 CORS(app, resources={r"/*": {"origins": "*"}}) 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Master playlist (frontend can request for this)
-PLAYLIST = []
+# Master playlists for Deck 1 and Deck 2
+PLAYLISTS = {'deck1': [], 'deck2': []}
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 
@@ -59,14 +59,20 @@ def hash_uri(uri: str) -> str:
     return hashlib.sha1(uri.encode('utf-8')).hexdigest()[:10]
 
 
-def update_song_in_playlist(song_id: str, update_data: dict):
-    """Finds a song by ID in the master PLAYLIST and updates its fields."""
-    for song in PLAYLIST:
+def update_song_in_playlist(song_id: str, deck_id: str, update_data: dict):
+    """Finds a song by ID in the specified deck's playlist and updates its fields."""
+    
+    target_playlist = PLAYLISTS.get(deck_id)
+    if target_playlist is None:
+        app.logger.error(f"Invalid deck_id '{deck_id}' for song update.")
+        return False
+
+    for song in target_playlist:
         if song.get('id') == song_id:
-            app.logger.info(f"Updating song ID {song_id} with data: {update_data.keys()}")
+            app.logger.info(f"Updating song ID {song_id} in {deck_id} with data: {update_data.keys()}")
             song.update(update_data)
             return True
-    app.logger.warning(f"Failed to find song with ID {song_id} to update.")
+    app.logger.warning(f"Failed to find song with ID {song_id} in {deck_id} to update.")
     return False
 
 
@@ -100,17 +106,17 @@ def token_endpoint():
 
 
 def broadcast_playlist_update(client_sid=None):
-    """Sends the current state of the PLAYLIST to a specific client or all."""
-    # Send the master song list to the requesting client (or all)
+    """Sends the current state of the PLAYLISTS dictionary to a specific client or all."""
+    
     if client_sid:
-        app.logger.info(f"Emitting PLAYLIST to specific client: {client_sid}")
-        socketio.emit('playlist_update', {'songs': PLAYLIST}, to=client_sid)
+        app.logger.info(f"Emitting PLAYLISTS to specific client: {client_sid}")
+        socketio.emit('playlist_update', {'playlists': PLAYLISTS}, to=client_sid) 
     else:
-        app.logger.info(f"Broadcasting PLAYLIST to all clients. Total songs: {len(PLAYLIST)}")
-        socketio.emit('playlist_update', {'songs': PLAYLIST}, broadcast=True)
+        app.logger.info(f"Broadcasting PLAYLISTS to all clients. Total songs (D1+D2): {len(PLAYLISTS['deck1']) + len(PLAYLISTS['deck2'])}")
+        socketio.emit('playlist_update', {'playlists': PLAYLISTS})
 
 
-def download_song(song_data: dict):
+def download_song(song_data: dict, deck_id: str): 
     """
     Downloads a song using yt-dlp in a background task and updates the master playlist.
     """
@@ -122,8 +128,8 @@ def download_song(song_data: dict):
     output_template = os.path.join(DOWNLOAD_DIR, f"{filename_base}.%(ext)s")
     
     socketio.emit('status_update', 
-                  {'message': f'Download started: {artist} - {title}'},
-                  broadcast=True) 
+                  {'message': f'Download started for {deck_id}: {artist} - {title}'}, # Updated message
+                  ) 
     
     download_command = f"yt-dlp -x --audio-format mp3 --no-playlist 'ytsearch:{artist} {title}' -o '{output_template}'"
     app.logger.info(f"Executing: {download_command}")
@@ -132,15 +138,14 @@ def download_song(song_data: dict):
     
     final_path = os.path.join(DOWNLOAD_DIR, f"{filename_base}.mp3")
 
-    app.logger.info(f"Download complete for: {artist} - {title}. Expected path: {final_path}")
+    app.logger.info(f"Download complete for {deck_id}: {artist} - {title}. Expected path: {final_path}")
     
-    if update_song_in_playlist(song_id, {'download_path': final_path}):
+    if update_song_in_playlist(song_id, deck_id, {'download_path': final_path}): 
        broadcast_playlist_update() 
 
     socketio.emit('status_update', 
-                  {'message': f'Download complete: {artist} - {title}'}, 
-                  broadcast=True)
-
+                  {'message': f'Download complete for {deck_id}: {artist} - {title}'}, 
+                  )
 
 # ========= SOCKET.IO EVENTS ========= #
 @socketio.on('connect')
@@ -164,9 +169,11 @@ def handle_json_message(data):
     try:
         if isinstance(data, dict):
             action = data.get("action")
-            
+            # New: Get deck_id from the incoming message
+            deck_id = data.get("deck_id") 
             spotify_uri = data.get("spotify_uri")
             
+            # --- Song Data setup remains the same ---
             song_data = {
                 'id': hash_uri(spotify_uri) if spotify_uri else None, 
                 'title': data.get("title"),
@@ -176,18 +183,19 @@ def handle_json_message(data):
                 'duration_ms': data.get("duration_ms"),
                 'download_path': None 
             }
+            # ----------------------------------------
             
             if action == "ADD_SONG":
-                if not song_data['id']:
-                    app.logger.error("Cannot add song without a Spotify URI.")
+                if not song_data['id'] or deck_id not in PLAYLISTS: # Validate deck_id
+                    app.logger.error("Cannot add song: Missing Spotify URI or invalid deck_id.")
                     return
                 
-                PLAYLIST.append(song_data)
-                app.logger.info(f"Added song ID {song_data['id']} to master list.")
+                PLAYLISTS[deck_id].append(song_data) 
+                app.logger.info(f"Added song ID {song_data['id']} to master list for {deck_id}.")
                 broadcast_playlist_update() 
                 
-                socketio.start_background_task(download_song, song_data)
-                
+                socketio.start_background_task(download_song, song_data, deck_id)
+
             elif action == "PLAY_SONG":
                 app.logger.info(f"PLAY_SONG request for song ID: {song_data.get('id')}")
                 

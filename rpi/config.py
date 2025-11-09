@@ -9,7 +9,7 @@ MUSIC_PATH_1 = "rpi/example-mp3/chappell-roan-red-wine-supernova.mp3"
 MUSIC_PATH_2 = "rpi/example-mp3/charli-xcx-365.mp3"  # Only used if DUAL_DECK_MODE = True
 
 # ==================== DECK CONFIGURATION ====================
-DUAL_DECK_MODE = False  # Set to True for two-deck mixing, False for single deck
+DUAL_DECK_MODE = True  # Set to True for two-deck mixing, False for single deck
 
 # ==================== I2C CONFIGURATION ====================
 I2C_BUS = 1                    # RPi5 I2C bus (usually 1)
@@ -91,8 +91,8 @@ ENABLE_EXTRAPOLATION = True
 ALLOW_REVERSE_PLAYBACK = True
 
 # ==================== DEBUG SETTINGS ====================
-DEBUG_PRINT_I2C = True         # Print I2C read values
-DEBUG_PRINT_RATE = True        # Print rate changes
+DEBUG_PRINT_I2C = False         # Print I2C read values
+DEBUG_PRINT_RATE = False        # Print rate changes
 DEBUG_PRINT_VOLUME = True      # Print volume changes
 
 # ==================== SMOOTHING SETTINGS ====================

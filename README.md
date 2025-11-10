@@ -33,7 +33,7 @@ Box-DJ is a physical DJ mixing system that allows you to:
 
 ### Key Features
 
-✅ **Dual-deck audio mixing** with GStreamer pipelines
+✅ **Dual-deck audio mixing** with GStreamer pipelines  
 ✅ **Real-time speed modulation** (0.5x to 3.0x playback speed)
 ✅ **Multiple control modes**: Velocity (scratching), Position (pitch slider), Turntable (vinyl simulation)
 ✅ **Spotify search integration** with automatic YouTube download

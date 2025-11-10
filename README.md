@@ -34,12 +34,12 @@ Box-DJ is a physical DJ mixing system that allows you to:
 ### Key Features
 
 ✅ **Dual-deck audio mixing** with GStreamer pipelines  
-✅ **Real-time speed modulation** (0.5x to 3.0x playback speed)
-✅ **Multiple control modes**: Velocity (scratching), Position (pitch slider), Turntable (vinyl simulation)
-✅ **Spotify search integration** with automatic YouTube download
-✅ **Hardware I/O**: 2 encoders, 6 buttons, 2 potentiometers, motors, LED strips
-✅ **Low-latency I2C communication** at 50Hz between ESP32 and RPi
-✅ **Velocity smoothing algorithms** for jitter-free control with low-PPR encoders
+✅ **Real-time speed modulation** (0.5x to 3.0x playback speed)  
+✅ **Multiple control modes**: Velocity (scratching), Position (pitch slider), Turntable (vinyl simulation)  
+✅ **Spotify search integration** with automatic YouTube download  
+✅ **Hardware I/O**: 2 encoders, 6 buttons, 2 potentiometers, motors, LED strips  
+✅ **Low-latency I2C communication** at 50Hz between ESP32 and RPi  
+✅ **Velocity smoothing algorithms** for jitter-free control with low-PPR encoders  
 ✅ **Web-based playlist management** via Socket.IO
 
 ---

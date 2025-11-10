@@ -153,7 +153,7 @@ esp_err_t initialize_main(void)
 esp_err_t start_motors(void)
 {
     esp_err_t ret;
-    const uint8_t motor_speed = 150; // Set desired speed (0-255)
+    const uint8_t motor_speed = 200; // Set desired speed (0-255)
     ret = motors_forward(motor_speed);
     if (ret != ESP_OK) {
         LOG_ERROR(TAG, "Failed to start motors: %s", esp_err_to_name(ret));
